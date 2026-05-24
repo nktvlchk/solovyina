@@ -88,12 +88,37 @@ _stats = {
     "total": 0,
     "words": Counter(),
     "started_at": datetime.datetime.now(),
+    # PM analytics
+    "users": {},          # user_id → {"name": str, "first": datetime, "last": datetime, "count": int}
+    "directions": Counter(),  # "uk→ru", "ru→uk", "unknown"
+    "sources": Counter(),     # "dict", "google", "failed"
+    "tts_count": 0,
+    "hourly": Counter(),      # hour (0-23) → count
 }
 
 
-def track_word(word: str):
+def track_event(user_id: int, username: str, word: str, lang: str, source: str):
+    now = datetime.datetime.now()
     _stats["total"] += 1
     _stats["words"][word] += 1
+    _stats["hourly"][now.hour] += 1
+
+    # Юзер
+    if user_id not in _stats["users"]:
+        _stats["users"][user_id] = {"name": username or str(user_id), "first": now, "last": now, "count": 0}
+    _stats["users"][user_id]["last"] = now
+    _stats["users"][user_id]["count"] += 1
+
+    # Напрямок
+    if lang == "uk":
+        _stats["directions"]["🇺🇦 укр→рос"] += 1
+    elif lang == "ru":
+        _stats["directions"]["🇷🇺 рос→укр"] += 1
+    else:
+        _stats["directions"]["❓ невідомо"] += 1
+
+    # Джерело
+    _stats["sources"][source] += 1
 
 
 # =====================================================================
@@ -328,23 +353,69 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # =====================================================================
 
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uptime = datetime.datetime.now() - _stats["started_at"]
+    now = datetime.datetime.now()
+    uptime = now - _stats["started_at"]
     hours = int(uptime.total_seconds() // 3600)
     minutes = int((uptime.total_seconds() % 3600) // 60)
-    top = _stats["words"].most_common(10)
+
+    total_users = len(_stats["users"])
+    today = now.date()
+    active_today = sum(1 for u in _stats["users"].values() if u["last"].date() == today)
+    new_today = sum(1 for u in _stats["users"].values() if u["first"].date() == today)
+
+    # Пікова година
+    peak_hour, peak_count = _stats["hourly"].most_common(1)[0] if _stats["hourly"] else (None, 0)
 
     text = "📊 <b>Статистика бота</b>\n\n"
+
+    # Загальне
     text += f"🔢 Всього запитів: <b>{_stats['total']}</b>\n"
-    text += f"⏱ Час роботи: <b>{hours} год. {minutes} хв.</b>\n"
+    text += f"⏱ Аптайм: <b>{hours} год. {minutes} хв.</b>\n"
     text += f"📚 Слів у базі: <b>{len(ALL_WORDS):,}</b>\n\n"
 
+    # Юзери
+    text += "👥 <b>Юзери:</b>\n"
+    text += f"  Всього: <b>{total_users}</b>\n"
+    text += f"  Активних сьогодні: <b>{active_today}</b>\n"
+    text += f"  Нових сьогодні: <b>{new_today}</b>\n\n"
+
+    # Напрямок перекладу
+    if _stats["directions"]:
+        text += "🌐 <b>Напрямок перекладу:</b>\n"
+        for direction, count in _stats["directions"].most_common():
+            pct = round(count / _stats["total"] * 100) if _stats["total"] else 0
+            text += f"  {direction}: <b>{count}</b> ({pct}%)\n"
+        text += "\n"
+
+    # Джерело
+    if _stats["sources"]:
+        text += "⚙️ <b>Джерело перекладу:</b>\n"
+        source_labels = {"dict": "📖 Словник", "google": "🤖 Google", "failed": "❌ Провал"}
+        for src, count in _stats["sources"].most_common():
+            label = source_labels.get(src, src)
+            pct = round(count / _stats["total"] * 100) if _stats["total"] else 0
+            text += f"  {label}: <b>{count}</b> ({pct}%)\n"
+        text += "\n"
+
+    # TTS + пік
+    text += f"🔊 TTS використано: <b>{_stats['tts_count']}</b>\n"
+    if peak_hour is not None:
+        text += f"📈 Пікова година: <b>{peak_hour}:00</b> ({peak_count} запитів)\n\n"
+
+    # Топ-10 слів
+    top = _stats["words"].most_common(10)
     if top:
         text += "🏆 <b>Топ-10 запитів:</b>\n"
         medals = ["🥇", "🥈", "🥉"] + ["▪️"] * 7
         for i, (word, count) in enumerate(top):
             text += f"{medals[i]} {word} — {count}x\n"
-    else:
-        text += "Поки немає запитів."
+
+    # Топ-5 юзерів (за кількістю запитів)
+    if _stats["users"]:
+        top_users = sorted(_stats["users"].items(), key=lambda x: x[1]["count"], reverse=True)[:5]
+        text += "\n👤 <b>Топ юзери:</b>\n"
+        for uid, info in top_users:
+            text += f"  {info['name']} — {info['count']} запитів\n"
 
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -380,10 +451,13 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not word or len(word) > 4000:
         return
 
-    track_word(word)
+    user = update.effective_user
+    user_id = user.id if user else 0
+    username = (user.username or user.first_name or str(user_id)) if user else "unknown"
 
     is_single_word = ' ' not in word
     lang = detect_language(raw_text)
+    _tracked_source = "google"  # буде уточнено нижче
 
     # ── ОДНЕ СЛОВО ──────────────────────────────────────────────────
     if is_single_word and len(word) >= 2:
@@ -417,6 +491,8 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         found_word, entry = fuzzy_lookup_ukr(word)
         if not entry and gt_different and translation:
             found_word, entry = fuzzy_lookup_ukr(translation.lower().strip())
+        if entry:
+            _tracked_source = "dict"
 
         # Якщо слово не знайшли як українське — шукаємо як російське
         rus_entries = []
@@ -493,11 +569,15 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             else:
+                _tracked_source = "failed"
                 await update.message.reply_text(
                     f"❓ Не вдалося перекласти <b>{raw_text}</b>.\n"
                     "Спробуйте інше написання.",
                     parse_mode=ParseMode.HTML
                 )
+
+        track_event(user_id, username, word, lang, _tracked_source)
+        return
 
     # ── ФРАЗА / РЕЧЕННЯ ─────────────────────────────────────────────
     else:
@@ -524,11 +604,14 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             else:
+                _tracked_source = "failed"
                 await update.message.reply_text(
                     f"❓ Не вдалося перекласти <b>{raw_text}</b>.\n"
                     "Спробуйте інше написання.",
                     parse_mode=ParseMode.HTML
                 )
+
+    track_event(user_id, username, word, lang, _tracked_source)
 
 
 # =====================================================================
@@ -543,6 +626,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data.startswith("tts_"):
         tts_key = data[4:]
         tts_text = TTS_CACHE.get(tts_key, tts_key)
+        _stats["tts_count"] += 1
         try:
             tts_obj = gTTS(text=tts_text, lang='uk', slow=False)
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
