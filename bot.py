@@ -10,6 +10,8 @@ import logging
 import asyncio
 import time
 import tempfile
+import datetime
+from collections import Counter
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,6 +28,11 @@ from gtts import gTTS
 from data import DICTIONARY
 from big_dictionary import BIG_DICT
 from wiktionary import lookup_wiktionary, format_wiktionary_entry
+
+try:
+    from apertium_dict import APERTIUM_DICT
+except ImportError:
+    APERTIUM_DICT = {}
 
 load_dotenv()
 
@@ -46,10 +53,13 @@ def _convert_big(entry_tuple):
     return {"pos": entry_tuple[0], "translation": entry_tuple[1], "example": entry_tuple[2]}
 
 ALL_WORDS = {}
+# Пріоритет: APERTIUM < BIG_DICT < DICTIONARY
+for w, e in APERTIUM_DICT.items():
+    ALL_WORDS[w] = _convert_big(e)
 for w, e in BIG_DICT.items():
     ALL_WORDS[w] = _convert_big(e)
 for w, e in DICTIONARY.items():
-    ALL_WORDS[w] = e  # DICTIONARY перекриває BIG_DICT
+    ALL_WORDS[w] = e  # DICTIONARY перекриває все
 
 REVERSE_DICT = {}
 for ukr_word, entry in ALL_WORDS.items():
@@ -68,6 +78,22 @@ for ukr_word, entry in ALL_WORDS.items():
                 REVERSE_DICT[first_word].append((ukr_word, entry))
 
 logger.info(f"📚 Словник: {len(ALL_WORDS)} укр слів, {len(REVERSE_DICT)} рос ключів")
+
+
+# =====================================================================
+# СТАТИСТИКА (in-memory)
+# =====================================================================
+
+_stats = {
+    "total": 0,
+    "words": Counter(),
+    "started_at": datetime.datetime.now(),
+}
+
+
+def track_word(word: str):
+    _stats["total"] += 1
+    _stats["words"][word] += 1
 
 
 # =====================================================================
@@ -298,6 +324,32 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # =====================================================================
+# /stats
+# =====================================================================
+
+async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uptime = datetime.datetime.now() - _stats["started_at"]
+    hours = int(uptime.total_seconds() // 3600)
+    minutes = int((uptime.total_seconds() % 3600) // 60)
+    top = _stats["words"].most_common(10)
+
+    text = "📊 <b>Статистика бота</b>\n\n"
+    text += f"🔢 Всього запитів: <b>{_stats['total']}</b>\n"
+    text += f"⏱ Час роботи: <b>{hours} год. {minutes} хв.</b>\n"
+    text += f"📚 Слів у базі: <b>{len(ALL_WORDS):,}</b>\n\n"
+
+    if top:
+        text += "🏆 <b>Топ-10 запитів:</b>\n"
+        medals = ["🥇", "🥈", "🥉"] + ["▪️"] * 7
+        for i, (word, count) in enumerate(top):
+            text += f"{medals[i]} {word} — {count}x\n"
+    else:
+        text += "Поки немає запитів."
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+# =====================================================================
 # /help
 # =====================================================================
 
@@ -311,7 +363,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "• наголос і вимова 🔉\n"
         "• тлумачення і приклади\n"
         "• кнопка «Озвучити» 🔊\n\n"
-        f"📚 {len(ALL_WORDS):,} слів у базі + Google Translate + Wiktionary (53 000+ слів)"
+        f"📚 {len(ALL_WORDS):,} слів у базі + Google Translate + Wiktionary (53 000+ слів)\n\n"
+        "/stats — статистика запитів 📊"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -326,6 +379,8 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not word or len(word) > 4000:
         return
+
+    track_word(word)
 
     is_single_word = ' ' not in word
     lang = detect_language(raw_text)
@@ -517,6 +572,7 @@ def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_word))
 
