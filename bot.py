@@ -25,6 +25,18 @@ from telegram.constants import ParseMode
 from deep_translator import GoogleTranslator, MyMemoryTranslator
 from gtts import gTTS
 
+try:
+    from ai import llm_translate, llm_check, ai_enabled
+except Exception:  # ai.py відсутній або немає бібліотеки anthropic
+    def llm_translate(text, source, target):
+        return ""
+
+    def llm_check(text):
+        return ""
+
+    def ai_enabled():
+        return False
+
 from data import DICTIONARY
 from big_dictionary import BIG_DICT
 from wiktionary import lookup_wiktionary, format_wiktionary_entry
@@ -41,6 +53,11 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# httpx логує повний URL із токеном бота — прибираємо витік токена в логи Railway
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext.Application").setLevel(logging.WARNING)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -253,26 +270,75 @@ def fuzzy_lookup_rus(word: str) -> list:
 # ПЕРЕКЛАД — з повторними спробами
 # =====================================================================
 
+# Ознаки того, що замість перекладу прилетіла HTML-сторінка помилки
+_BAD_MARKERS = (
+    "that's an error",
+    "that\u2019s an error",
+    "that's all we know",
+    "that\u2019s all we know",
+    "server error",
+    "error 500",
+    "error 429",
+    "error 503",
+    "please try again later",
+    "unusual traffic",
+    "<html",
+    "<!doctype",
+    "mymemory warning",
+    "you used all available free translations",
+    "invalid email",
+    "query length limit",
+)
+
+
+def _looks_broken(result: str, source_text: str) -> bool:
+    """True, якщо сервіс віддав сторінку помилки замість перекладу."""
+    if not result or not result.strip():
+        return True
+    low = result.lower()
+    if any(m in low for m in _BAD_MARKERS):
+        return True
+    # відповідь у рази довша за запит — майже завжди сміття
+    if len(result) > max(300, len(source_text) * 6):
+        return True
+    return False
+
+
 def _do_translate(text: str, source: str, target: str, retries: int = 3) -> str:
     """Синхронний переклад з повторами. Викликається через run_in_executor."""
+    # 1) Google
     for attempt in range(retries):
         try:
             result = GoogleTranslator(source=source, target=target).translate(text)
-            if result and result.strip():
+            if not _looks_broken(result, text):
                 return result.strip()
+            logger.warning(
+                f"Google Translate ({source}\u2192{target}) спроба {attempt + 1}: "
+                f"сміття замість перекладу: {str(result)[:120]!r}"
+            )
         except Exception as e:
-            logger.warning(f"Google Translate ({source}→{target}) спроба {attempt + 1}: {e}")
-            if attempt < retries - 1:
-                time.sleep(1.5 * (attempt + 1))  # 1.5s, 3s між спробами
+            logger.warning(f"Google Translate ({source}\u2192{target}) спроба {attempt + 1}: {e}")
+        if attempt < retries - 1:
+            time.sleep(1.5 * (attempt + 1))  # 1.5s, 3s між спробами
 
-    # Fallback: MyMemory
+    # 2) Fallback: MyMemory
     try:
         src_code = source if source != 'auto' else 'uk'
         result = MyMemoryTranslator(source=src_code, target=target).translate(text)
-        if result and result.strip():
+        if not _looks_broken(result, text):
+            return result.strip()
+        logger.warning(f"MyMemory віддав сміття: {str(result)[:120]!r}")
+    except Exception as e:
+        logger.warning(f"MyMemory ({source}\u2192{target}) помилка: {e}")
+
+    # 3) Fallback: LLM (працює тільки якщо задано ANTHROPIC_API_KEY)
+    try:
+        tgt = target if target in ("uk", "ru") else ("ru" if source == "uk" else "uk")
+        result = llm_translate(text, source, tgt)
+        if not _looks_broken(result, text):
             return result.strip()
     except Exception as e:
-        logger.warning(f"MyMemory ({source}→{target}) помилка: {e}")
+        logger.warning(f"LLM-переклад помилка: {e}")
 
     return ""
 
@@ -435,9 +501,66 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "• тлумачення і приклади\n"
         "• кнопка «Озвучити» 🔊\n\n"
         f"📚 {len(ALL_WORDS):,} слів у базі + Google Translate + Wiktionary (53 000+ слів)\n\n"
+        "✍️ <b>/check</b> — перевірю твій текст українською:\n"
+        "орфографія, граматика, кальки з російської.\n"
+        "Приклад: <code>/check Я ходив в магазін</code>\n\n"
         "/stats — статистика запитів 📊"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+# =====================================================================
+# /check — ПЕРЕВІРКА ТЕКСТУ КОРИСТУВАЧА
+# =====================================================================
+
+MAX_CHECK_LEN = 3000
+
+
+async def _run_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str):
+    text = (text or "").strip()
+    if not text:
+        await update.message.reply_text("Порожній текст 🤷")
+        return
+    if len(text) > MAX_CHECK_LEN:
+        await update.message.reply_text(
+            f"Занадто довгий текст ({len(text)} символів). Максимум {MAX_CHECK_LEN}."
+        )
+        return
+
+    msg = await update.message.reply_text("⏳ Перевіряю…")
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, llm_check, text)
+
+    if not result:
+        await msg.edit_text("❌ Перевірка зараз недоступна. Спробуй пізніше.")
+        return
+    try:
+        await msg.edit_text(result, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.warning(f"/check: не вдалося відправити HTML: {e}")
+        await msg.edit_text(re.sub(r"<[^>]+>", "", result))
+
+
+async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not ai_enabled():
+        await update.message.reply_text(
+            "🔒 Перевірка тексту вимкнена: не задано ANTHROPIC_API_KEY."
+        )
+        return
+
+    text = " ".join(ctx.args).strip() if ctx.args else ""
+    if not text and update.message.reply_to_message:
+        text = (update.message.reply_to_message.text or "").strip()
+
+    if not text:
+        ctx.user_data["await_check"] = True
+        await update.message.reply_text(
+            "✍️ Надішли наступним повідомленням текст українською — "
+            "перевірю орфографію, граматику й кальки з російської."
+        )
+        return
+
+    await _run_check(update, ctx, text)
 
 
 # =====================================================================
@@ -446,6 +569,12 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
+
+    # користувач щойно натиснув /check — це його текст на перевірку
+    if ctx.user_data.pop("await_check", False):
+        await _run_check(update, ctx, raw_text)
+        return
+
     word = raw_text.lower()
 
     if not word or len(word) > 4000:
@@ -657,6 +786,7 @@ def main():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("check", cmd_check))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_word))
 
