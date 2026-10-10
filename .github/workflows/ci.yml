@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Formatting
+        run: ruff format --check .
+      - name: Dictionary is reproducible and passes quality checks
+        run: python scripts/build_dictionary.py --check
+      - name: Tests (no network, no real API keys)
+        run: pytest
+        env:
+          TELEGRAM_BOT_TOKEN: ""
+          ANTHROPIC_API_KEY: ""
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tracked files contain no secrets or runtime data
+        run: python scripts/check_secrets.py
+      - name: Gitleaks (commits in this push / pull request)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
