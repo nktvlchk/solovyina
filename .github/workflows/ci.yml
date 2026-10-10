@@ -46,6 +46,6 @@ jobs:
       - name: Tracked files contain no secrets or runtime data
         run: python scripts/check_secrets.py
       - name: Gitleaks (commits in this push / pull request)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
