@@ -17,10 +17,11 @@ from bot.handlers import admin, common, correction, feedback, modes, translation
 
 logger = logging.getLogger(__name__)
 
-# The bot works only in private chats. In groups (e.g. a class chat where the
-# same bot posts study cards) it stays silent: no translations of replies,
-# no answers to commands, nothing about other members gets processed.
+# Private chats get everything. In groups (e.g. a class chat where the same
+# bot posts study cards) only explicit /check and /say work; ordinary
+# messages are never translated or processed.
 PRIVATE = filters.ChatType.PRIVATE
+ANY_CHAT = filters.ChatType.PRIVATE | filters.ChatType.GROUPS
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -38,8 +39,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("about", common.cmd_about, filters=PRIVATE))
     app.add_handler(CommandHandler("delete_my_data", common.cmd_delete_my_data, filters=PRIVATE))
     app.add_handler(CommandHandler("direction", translation.cmd_direction, filters=PRIVATE))
-    app.add_handler(CommandHandler("check", correction.cmd_check, filters=PRIVATE))
-    app.add_handler(CommandHandler("say", modes.cmd_say, filters=PRIVATE))
+    app.add_handler(CommandHandler("check", correction.cmd_check, filters=ANY_CHAT))
+    app.add_handler(CommandHandler("say", modes.cmd_say, filters=ANY_CHAT))
     app.add_handler(CommandHandler("mistakes", modes.cmd_mistakes, filters=PRIVATE))
     app.add_handler(CommandHandler("stats", admin.cmd_stats, filters=PRIVATE))
     app.add_handler(CommandHandler("export_stats", admin.cmd_export_stats, filters=PRIVATE))

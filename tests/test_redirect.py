@@ -36,7 +36,7 @@ def test_redirect_ignores_group_chats():
     assert "PRIVATE" in repr(handler.filters).upper()
 
 
-def test_main_bot_handlers_are_private_only():
+def test_main_bot_in_groups_only_check_and_say():
     from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler
 
     from bot.handlers import register_handlers
@@ -44,5 +44,21 @@ def test_main_bot_handlers_are_private_only():
     app = ApplicationBuilder().token("123456:TEST").build()
     register_handlers(app)
     for handler in app.handlers[0]:
-        if isinstance(handler, (CommandHandler, MessageHandler)):
-            assert "PRIVATE" in repr(handler.filters).upper(), handler
+        if isinstance(handler, CommandHandler):
+            text = repr(handler.filters).upper()
+            assert "PRIVATE" in text, handler
+            assert ("GROUP" in text) == bool(handler.commands & {"check", "say"}), handler.commands
+        elif isinstance(handler, MessageHandler):
+            text = repr(handler.filters).upper()
+            assert "PRIVATE" in text and "GROUP" not in text
+
+
+def test_command_text_keeps_line_breaks():
+    from types import SimpleNamespace
+
+    from bot.handlers.util import command_text
+
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(text="/check@solovyinamova_bot Рядок 1\nРядок 2")
+    )
+    assert command_text(update) == "Рядок 1\nРядок 2"

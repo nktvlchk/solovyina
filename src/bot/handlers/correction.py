@@ -6,7 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import reply_html, services, track, user_id
+from bot.handlers.util import command_text, is_private, reply_html, services, track, user_id
 from bot.models.correction import CheckResult, Correction, Severity, Verdict
 from bot.services.correction import CheckUnavailable
 
@@ -25,6 +25,11 @@ VERDICT_LABELS = {
 }
 VERDICT_CODES = {Verdict.ERROR: "e", Verdict.NOT_ERROR: "n", Verdict.STYLE: "s"}
 CODE_TO_VERDICT = {v: k for k, v in VERDICT_CODES.items()}
+
+GROUP_CHECK_HINT = (
+    "✍️ Напишіть текст одразу після команди: /check Ваш текст\n"
+    "Або відповідайте командою /check на своє повідомлення."
+)
 
 UNAVAILABLE_MESSAGES = {
     "disabled": "🔒 Перевірка тексту вимкнена: не налаштовано мовну модель.",
@@ -77,7 +82,7 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not svc.correction.enabled:
         await update.effective_message.reply_text(UNAVAILABLE_MESSAGES["disabled"])
         return
-    text = " ".join(context.args).strip() if context.args else ""
+    text = command_text(update)
     reply_to = update.effective_message.reply_to_message
     if not text and reply_to and reply_to.text:
         author = reply_to.from_user.id if reply_to.from_user else None
@@ -87,6 +92,9 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         text = reply_to.text.strip()
+    if not text and not is_private(update):
+        await update.effective_message.reply_text(GROUP_CHECK_HINT)
+        return
     if not text:
         context.user_data["await_check"] = True
         await update.effective_message.reply_text(

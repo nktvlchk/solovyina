@@ -52,3 +52,17 @@ def track(update: Update, context: ContextTypes.DEFAULT_TYPE, event: str, **prop
         svc.analytics.track(user_id(update), event, **props)
     except Exception as exc:  # analytics must never break the bot
         logging.getLogger(__name__).warning("analytics failed: %s", type(exc).__name__)
+
+
+def is_private(update: Update) -> bool:
+    chat = getattr(update, "effective_chat", None)
+    return chat is None or chat.type == "private"
+
+
+def command_text(update: Update) -> str:
+    """Text after the command, line breaks kept (context.args loses them)."""
+    message = update.effective_message
+    if message is None or not message.text:
+        return ""
+    parts = message.text.split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""

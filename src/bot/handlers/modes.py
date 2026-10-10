@@ -17,7 +17,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import reply_html, services, track, user_id
+from bot.handlers.util import command_text, is_private, reply_html, services, track, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS
 from bot.services.translation import TranslationUnavailable
@@ -57,7 +57,10 @@ async def select_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: 
 
 
 async def cmd_say(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = " ".join(context.args).strip() if context.args else ""
+    text = command_text(update)
+    if not text and not is_private(update):
+        await update.effective_message.reply_text("💬 Напишіть фразу одразу після команди: /say ваша фраза")
+        return
     if not text:
         await select_mode(update, context, SAY)
         return

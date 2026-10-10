@@ -18,7 +18,7 @@ async def test_say_mode_is_one_shot(make_services):
 
 async def test_say_without_model_uses_translator(make_services):
     svc = make_services(mymemory=FakeMyMemory({"как дела": "як справи"}))
-    update = make_update("/say")
+    update = make_update("/say как дела")
     await modes.cmd_say(update, make_context(svc, args=["как", "дела"]))
     text = update.effective_message.sent[-1]["text"]
     assert "як справи" in text and "MyMemory" in text
