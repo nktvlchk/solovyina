@@ -3,6 +3,7 @@
 Переклад слів і фраз укр ↔ рос з наголосом (Wiktionary)
 """
 
+import html
 import os
 import re
 import json
@@ -60,6 +61,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext.Application").setLevel(logging.WARNING)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+ADMIN_IDS = {
+    int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()
+}
 
 
 # =====================================================================
@@ -103,10 +107,9 @@ logger.info(f"📚 Словник: {len(ALL_WORDS)} укр слів, {len(REVERS
 
 _stats = {
     "total": 0,
-    "words": Counter(),
     "started_at": datetime.datetime.now(),
     # PM analytics
-    "users": {},          # user_id → {"name": str, "first": datetime, "last": datetime, "count": int}
+    "users": {},          # user_id → {"first": datetime, "last": datetime, "count": int} (без імен)
     "directions": Counter(),  # "uk→ru", "ru→uk", "unknown"
     "sources": Counter(),     # "dict", "google", "failed"
     "tts_count": 0,
@@ -114,15 +117,14 @@ _stats = {
 }
 
 
-def track_event(user_id: int, username: str, word: str, lang: str, source: str):
+def track_event(user_id: int, lang: str, source: str):
     now = datetime.datetime.now()
     _stats["total"] += 1
-    _stats["words"][word] += 1
     _stats["hourly"][now.hour] += 1
 
     # Юзер
     if user_id not in _stats["users"]:
-        _stats["users"][user_id] = {"name": username or str(user_id), "first": now, "last": now, "count": 0}
+        _stats["users"][user_id] = {"first": now, "last": now, "count": 0}
     _stats["users"][user_id]["last"] = now
     _stats["users"][user_id]["count"] += 1
 
@@ -314,10 +316,10 @@ def _do_translate(text: str, source: str, target: str, retries: int = 3) -> str:
                 return result.strip()
             logger.warning(
                 f"Google Translate ({source}\u2192{target}) спроба {attempt + 1}: "
-                f"сміття замість перекладу: {str(result)[:120]!r}"
+                "сміття замість перекладу"
             )
         except Exception as e:
-            logger.warning(f"Google Translate ({source}\u2192{target}) спроба {attempt + 1}: {e}")
+            logger.warning(f"Google Translate ({source}\u2192{target}) спроба {attempt + 1}: {type(e).__name__}")
         if attempt < retries - 1:
             time.sleep(1.5 * (attempt + 1))  # 1.5s, 3s між спробами
 
@@ -327,7 +329,7 @@ def _do_translate(text: str, source: str, target: str, retries: int = 3) -> str:
         result = MyMemoryTranslator(source=src_code, target=target).translate(text)
         if not _looks_broken(result, text):
             return result.strip()
-        logger.warning(f"MyMemory віддав сміття: {str(result)[:120]!r}")
+        logger.warning("MyMemory віддав сміття")
     except Exception as e:
         logger.warning(f"MyMemory ({source}\u2192{target}) помилка: {e}")
 
@@ -419,6 +421,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # =====================================================================
 
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user or user.id not in ADMIN_IDS:
+        await update.message.reply_text("Ця команда доступна лише адміністратору.")
+        return
     now = datetime.datetime.now()
     uptime = now - _stats["started_at"]
     hours = int(uptime.total_seconds() // 3600)
@@ -468,22 +474,20 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if peak_hour is not None:
         text += f"📈 Пікова година: <b>{peak_hour}:00</b> ({peak_count} запитів)\n\n"
 
-    # Топ-10 слів
-    top = _stats["words"].most_common(10)
-    if top:
-        text += "🏆 <b>Топ-10 запитів:</b>\n"
-        medals = ["🥇", "🥈", "🥉"] + ["▪️"] * 7
-        for i, (word, count) in enumerate(top):
-            text += f"{medals[i]} {word} — {count}x\n"
-
-    # Топ-5 юзерів (за кількістю запитів)
-    if _stats["users"]:
-        top_users = sorted(_stats["users"].items(), key=lambda x: x[1]["count"], reverse=True)[:5]
-        text += "\n👤 <b>Топ юзери:</b>\n"
-        for uid, info in top_users:
-            text += f"  {info['name']} — {info['count']} запитів\n"
-
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+# =====================================================================
+# /privacy
+# =====================================================================
+
+async def cmd_privacy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🔒 Бот не зберігає тексти повідомлень, імена та username. "
+        "Для перекладу текст передається зовнішнім сервісам (Google Translate, MyMemory, "
+        "Wiktionary, Anthropic — якщо увімкнено), для озвучки — Google TTS. "
+        "У пам'яті процесу рахуються лише агреговані лічильники, вони зникають після перезапуску."
+    )
 
 
 # =====================================================================
@@ -504,7 +508,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "✍️ <b>/check</b> — перевірю твій текст українською:\n"
         "орфографія, граматика, кальки з російської.\n"
         "Приклад: <code>/check Я ходив в магазін</code>\n\n"
-        "/stats — статистика запитів 📊"
+        "/privacy — які дані обробляються"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -569,6 +573,7 @@ async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
+    safe_text = html.escape(raw_text)
 
     # користувач щойно натиснув /check — це його текст на перевірку
     if ctx.user_data.pop("await_check", False):
@@ -582,7 +587,6 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     user_id = user.id if user else 0
-    username = (user.username or user.first_name or str(user_id)) if user else "unknown"
 
     is_single_word = ' ' not in word
     lang = detect_language(raw_text)
@@ -629,24 +633,24 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rus_entries = fuzzy_lookup_rus(word)
 
         # Будуємо відповідь
-        text = f"<b>{raw_text}</b>\n\n"
+        text = f"<b>{safe_text}</b>\n\n"
         has_content = False
 
         # 1) Переклад від Google (якщо відрізняється від оригіналу)
         if gt_different and translation:
-            text += f"{translation}\n"
+            text += f"{html.escape(translation)}\n"
             has_content = True
 
         # 2) Якщо Google повернув те саме — слово однакове або він не спрацював
         #    Показуємо переклад з локального словника
         if not gt_different:
             if entry:
-                text += f"{entry['translation']}\n"
+                text += f"{html.escape(entry['translation'])}\n"
                 has_content = True
             elif rus_entries:
                 # Слово є в рос→укр словнику — воно російське
                 ukr_words = ", ".join(dict.fromkeys(e[0] for e in rus_entries[:4]))
-                text += f"{ukr_words}\n"
+                text += f"{html.escape(ukr_words)}\n"
                 ukr_word = rus_entries[0][0]
                 has_content = True
                 # Wiktionary для знайденого укр слова
@@ -668,7 +672,7 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # 4) Приклад з локального словника
         if entry and entry.get("example"):
-            text += f"<i>{entry['example']}</i>\n"
+            text += f"<i>{html.escape(entry['example'])}</i>\n"
             has_content = True
 
         # 5) Якщо слово однакове в обох мовах (напр. "драма", "кролик")
@@ -693,19 +697,19 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 tts_key = tts_store(forced)
                 keyboard = [[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts_{tts_key}")]]
                 await update.message.reply_text(
-                    f"<b>{raw_text}</b>\n\n{forced}",
+                    f"<b>{safe_text}</b>\n\n{html.escape(forced)}",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             else:
                 _tracked_source = "failed"
                 await update.message.reply_text(
-                    f"❓ Не вдалося перекласти <b>{raw_text}</b>.\n"
+                    f"❓ Не вдалося перекласти <b>{safe_text}</b>.\n"
                     "Спробуйте інше написання.",
                     parse_mode=ParseMode.HTML
                 )
 
-        track_event(user_id, username, word, lang, _tracked_source)
+        track_event(user_id, lang, _tracked_source)
         return
 
     # ── ФРАЗА / РЕЧЕННЯ ─────────────────────────────────────────────
@@ -713,7 +717,7 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         translation, tts_text = await smart_translate(raw_text, lang)
 
         if translation and translation.strip():
-            text = f"<b>{raw_text}</b>\n\n{translation}"
+            text = f"<b>{safe_text}</b>\n\n{html.escape(translation)}"
             tts_key = tts_store(tts_text or translation)
             keyboard = [[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts_{tts_key}")]]
             await update.message.reply_text(
@@ -728,19 +732,19 @@ async def handle_word(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 tts_key = tts_store(forced)
                 keyboard = [[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts_{tts_key}")]]
                 await update.message.reply_text(
-                    f"<b>{raw_text}</b>\n\n{forced}",
+                    f"<b>{safe_text}</b>\n\n{html.escape(forced)}",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             else:
                 _tracked_source = "failed"
                 await update.message.reply_text(
-                    f"❓ Не вдалося перекласти <b>{raw_text}</b>.\n"
+                    f"❓ Не вдалося перекласти <b>{safe_text}</b>.\n"
                     "Спробуйте інше написання.",
                     parse_mode=ParseMode.HTML
                 )
 
-    track_event(user_id, username, word, lang, _tracked_source)
+    track_event(user_id, lang, _tracked_source)
 
 
 # =====================================================================
@@ -767,8 +771,8 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
             os.unlink(f.name)
         except Exception as e:
-            logger.error(f"TTS помилка: {e}")
-            await query.message.reply_text(f"⚠️ Помилка озвучення: {str(e)[:200]}")
+            logger.error("TTS помилка: %s", type(e).__name__)
+            await query.message.reply_text("⚠️ Не вдалося озвучити. Спробуйте пізніше.")
 
 
 # =====================================================================
@@ -787,6 +791,7 @@ def main():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("check", cmd_check))
+    app.add_handler(CommandHandler("privacy", cmd_privacy))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_word))
 
