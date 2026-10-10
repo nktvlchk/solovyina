@@ -52,7 +52,6 @@ the owner (see `data/README.md`).
 |---|---|---|
 | Wiktionary (ru.wiktionary.org, MediaWiki API) | stress, definitions, examples | Text: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) and GFDL. Content shown to users is attributed to Wiktionary. [Terms of Use](https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use) |
 | MyMemory (api.mymemory.translated.net) | phrase translation | [Terms](https://mymemory.translated.net/doc/spec.php), free anonymous quota per day |
-| Google Translate (unofficial, via `deep-translator`) | phrase translation | Not an official API; see limitations in README |
 | Google Text-to-Speech (unofficial endpoint, via `gTTS`) | audio for a phrase on demand | Not an official API |
 | Anthropic API (optional) | text checking, natural phrasing | [Anthropic Commercial Terms](https://www.anthropic.com/legal/commercial-terms) |
 | Telegram Bot API | messaging | [Telegram Bot Terms](https://telegram.org/tos/bots) |
@@ -63,6 +62,6 @@ the owner (see `data/README.md`).
 |---|---|
 | python-telegram-bot | LGPL-3.0 |
 | gTTS | MIT |
-| deep-translator | MIT |
+| httpx | BSD-3-Clause |
 | python-dotenv | BSD-3-Clause |
 | anthropic | MIT |

@@ -120,7 +120,7 @@ def parse_dix(path: Path) -> list[Entry]:
         left, right = p.find("l"), p.find("r")
         if left is None or right is None:
             continue
-        ru, ru_tags = _side_text(left)
+        ru, _ru_tags = _side_text(left)
         uk, uk_tags = _side_text(right)
         ru, uk = normalize(ru), normalize(uk)
         if not any(ch.isalpha() for ch in ru) or not any(ch.isalpha() for ch in uk):

@@ -1,5 +1,6 @@
-python-telegram-bot==21.3
-deep-translator==1.11.4
+# Runtime dependencies, pinned. Update deliberately and run the tests.
+python-telegram-bot==22.8
+httpx==0.28.1
 gTTS==2.5.4
-python-dotenv==1.0.1
-anthropic==1.1.0
+python-dotenv==1.2.4
+anthropic==1.13.0

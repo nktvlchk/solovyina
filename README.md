@@ -40,7 +40,7 @@ TELEGRAM_BOT_TOKEN=ваш_токен_бота
 
 ```bash
 pip install -r requirements.txt
-python bot.py
+PYTHONPATH=src python -m bot
 ```
 
 ## Структура файлов
