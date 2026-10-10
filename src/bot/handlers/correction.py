@@ -5,7 +5,7 @@ import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bot.formatting import esc
+from bot.formatting import esc, esc_line
 from bot.handlers.util import reply_html, services, user_id
 from bot.models.correction import CheckResult, Correction, Severity, Verdict
 from bot.services.correction import CheckUnavailable
@@ -66,8 +66,8 @@ def format_correction(index: int, c: Correction) -> str:
     kind = "Помилка" if c.severity is Severity.ERROR else "Порада"
     label = TYPE_LABELS.get(c.type.value, c.type.value)
     return (
-        f"{index}. <b>{kind}</b> · <i>{esc(label)}</i>\n"
-        f"<s>{esc(c.original)}</s> → <b>{esc(c.replacement)}</b>\n"
+        f"{index}. <b>{kind}</b> · <i>{esc_line(label)}</i>\n"
+        f"<s>{esc_line(c.original)}</s> → <b>{esc_line(c.replacement)}</b>\n"
         f"{esc(c.explanation)}"
     )
 
@@ -80,6 +80,12 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = " ".join(context.args).strip() if context.args else ""
     reply_to = update.effective_message.reply_to_message
     if not text and reply_to and reply_to.text:
+        author = reply_to.from_user.id if reply_to.from_user else None
+        if author != user_id(update):
+            await update.effective_message.reply_text(
+                "Можна перевірити лише власне повідомлення. Надішліть текст після /check."
+            )
+            return
         text = reply_to.text.strip()
     if not text:
         context.user_data["await_check"] = True

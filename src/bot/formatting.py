@@ -13,6 +13,12 @@ def esc(text: object) -> str:
     return html.escape(str(text), quote=False)
 
 
+def esc_line(text: object) -> str:
+    """Escape and collapse newlines: for values placed inside <b>/<i>/<s>,
+    so split_message never cuts a tag across chunks."""
+    return esc(" ".join(str(text).split()))
+
+
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
     if len(text) <= limit:
         return text

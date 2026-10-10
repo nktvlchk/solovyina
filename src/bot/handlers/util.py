@@ -16,6 +16,16 @@ def user_id(update: Update) -> int:
     return update.effective_user.id if update.effective_user else 0
 
 
+def has_real_user(update: Update) -> bool:
+    """False for channel posts and anonymous group admins: they share one
+    Telegram ID, so per-user settings, limits and data would be mixed."""
+    user = update.effective_user
+    message = update.effective_message
+    if user is None:
+        return False
+    return getattr(message, "sender_chat", None) is None
+
+
 async def reply_html(message: Message, text: str, reply_markup=None) -> Message:
     """Send HTML, splitting long replies; the keyboard goes on the last part."""
     parts = split_message(text)

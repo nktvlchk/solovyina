@@ -16,7 +16,7 @@ import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bot.formatting import esc
+from bot.formatting import esc, esc_line
 from bot.handlers.util import reply_html, services, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS
@@ -77,16 +77,15 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
     started = time.monotonic()
     try:
         async with svc.concurrency():
-            result = await svc.translation.natural_ukrainian(text)
+            result = await svc.translation.natural_ukrainian(text, user_id(update))
     except TranslationUnavailable:
         await reply_html(
             update.effective_message, "😔 Зараз не вдалося підібрати варіант. Спробуйте пізніше."
         )
         return
     svc.metrics.incr("requests.say", int((time.monotonic() - started) * 1000))
-    reply = (
-        f"<b>{esc(text)}</b>\n\n🇺🇦 {esc(result.text)}\n\n<i>Джерело: {esc(SOURCE_LABELS[result.source])}</i>"
-    )
+    source = esc(SOURCE_LABELS[result.source])
+    reply = f"<b>{esc_line(text)}</b>\n\n🇺🇦 {esc(result.text)}\n\n<i>Джерело: {source}</i>"
     markup = None
     if len(result.text) <= svc.settings.max_tts_length:
         key = svc.text_cache.put(result.text)
@@ -120,8 +119,8 @@ async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     lines = ["🗂 <b>Мої помилки</b> (останні підтверджені):", ""]
     for i, c in enumerate(items, 1):
-        lines.append(f"{i}. <s>{esc(c.original)}</s> → <b>{esc(c.replacement)}</b>")
-        lines.append(f"   <i>{esc(c.explanation)}</i>")
+        lines.append(f"{i}. <s>{esc_line(c.original)}</s> → <b>{esc_line(c.replacement)}</b>")
+        lines.append(f"   <i>{esc_line(c.explanation)}</i>")
     await reply_html(update.effective_message, "\n".join(lines))
 
 

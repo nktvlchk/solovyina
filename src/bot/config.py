@@ -61,6 +61,7 @@ class Settings:
     log_level: str = "INFO"
     llm_model: str = "claude-haiku-4-5-20251001"
     llm_daily_limit: int = 200
+    llm_user_daily_limit: int = 30
     max_input_length: int = 1000
     max_tts_length: int = 300
     user_rate_limit_per_minute: int = 20
@@ -98,6 +99,7 @@ class Settings:
             log_level=log_level,
             llm_model=(env.get("LLM_MODEL") or "claude-haiku-4-5-20251001").strip(),
             llm_daily_limit=_int("LLM_DAILY_LIMIT", env.get("LLM_DAILY_LIMIT"), 200),
+            llm_user_daily_limit=_int("LLM_USER_DAILY_LIMIT", env.get("LLM_USER_DAILY_LIMIT"), 30, 1),
             max_input_length=_int("MAX_INPUT_LENGTH", env.get("MAX_INPUT_LENGTH"), 1000, 10),
             max_tts_length=_int("MAX_TTS_LENGTH", env.get("MAX_TTS_LENGTH"), 300, 10),
             user_rate_limit_per_minute=_int(

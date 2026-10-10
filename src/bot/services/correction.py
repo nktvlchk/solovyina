@@ -42,7 +42,7 @@ class CorrectionService:
     async def check(self, user_id: int, text: str) -> CheckResult:
         if self.llm is None or self.budget is None:
             raise CheckUnavailable("disabled")
-        if not await self.budget.try_consume():
+        if not await self.budget.try_consume(user_id):
             raise CheckUnavailable("budget")
         started = time.monotonic()
         try:

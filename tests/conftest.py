@@ -115,7 +115,8 @@ class FakeMessage:
         return FakeStatus(self)
 
     async def _voice(self, voice, **kwargs):
-        self.voices.append({"data": voice.read(), **kwargs})
+        data = voice if isinstance(voice, bytes) else voice.read()
+        self.voices.append({"data": data, **kwargs})
 
 
 class FakeStatus:

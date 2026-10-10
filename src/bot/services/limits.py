@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections import defaultdict, deque
 
-from bot.storage.repositories import MetricsRepository
+from bot.storage.repositories import MetricsRepository, today
 
 
 class RateLimiter:
@@ -37,16 +37,31 @@ class LlmBudget:
 
     METRIC = "llm.calls"
 
-    def __init__(self, metrics: MetricsRepository, daily_limit: int):
+    def __init__(self, metrics: MetricsRepository, daily_limit: int, user_daily_limit: int | None = None):
         self.metrics = metrics
         self.daily_limit = daily_limit
+        self.user_daily_limit = user_daily_limit
         self._lock = asyncio.Lock()
+        # Per-user counters stay in memory (never persisted, reset daily/on restart)
+        self._per_user: dict[int, int] = {}
+        self._per_user_day = ""
 
-    async def try_consume(self) -> bool:
+    async def try_consume(self, user_id: int | None = None) -> bool:
         async with self._lock:
+            day = today()
+            if day != self._per_user_day:
+                self._per_user, self._per_user_day = {}, day
+            if (
+                user_id is not None
+                and self.user_daily_limit is not None
+                and self._per_user.get(user_id, 0) >= self.user_daily_limit
+            ):
+                return False
             if self.metrics.count(self.METRIC) >= self.daily_limit:
                 return False
             self.metrics.incr(self.METRIC)
+            if user_id is not None:
+                self._per_user[user_id] = self._per_user.get(user_id, 0) + 1
             return True
 
 

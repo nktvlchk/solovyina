@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
@@ -37,11 +38,11 @@ class TextCache:
     def __init__(self, size: int = 2000):
         self._data: OrderedDict[str, str] = OrderedDict()
         self._size = size
-        self._counter = 0
 
     def put(self, text: str) -> str:
-        self._counter += 1
-        key = format(self._counter, "x")
+        # Random, not a counter: after a restart an old button must not
+        # resolve to someone else's new text.
+        key = secrets.token_urlsafe(6)
         self._data[key] = text
         if len(self._data) > self._size:
             self._data.popitem(last=False)
@@ -84,7 +85,11 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None)
         from bot.providers.anthropic import AnthropicProvider
 
         llm = AnthropicProvider(settings.anthropic_api_key, settings.llm_model)
-    budget = LlmBudget(metrics, settings.llm_daily_limit) if llm is not None else None
+    budget = (
+        LlmBudget(metrics, settings.llm_daily_limit, settings.llm_user_daily_limit)
+        if llm is not None
+        else None
+    )
     logger.info(
         "dictionary: %d headwords; model features: %s",
         len(dictionary),

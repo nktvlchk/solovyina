@@ -44,7 +44,7 @@ did I get wrong".
 | Feedback per correction | stored with model name and prompt version, re-voting allowed, no duplicates |
 | "Мої помилки" (`/mistakes`) | corrections you confirmed as errors |
 | "Поясни слово" | dictionary entry, part of speech, Wiktionary definitions, stress/IPA, example |
-| Audio | gTTS, **only on button press**; this is speech synthesis, not pronunciation assessment |
+| Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
 | Admin stats | `/stats` for `ADMIN_IDS` only, aggregated counters |
@@ -77,7 +77,9 @@ where `source` is the provider that actually produced the answer.
 
 ## Translation order
 
-**Single word:** 1) local dictionary (exact match) → 2) Wiktionary → 3) local
+**Single word:** 1) local dictionary (exact match) → 2) Wiktionary (Ukrainian
+words only; for Russian input it only adds stress/definitions to the Ukrainian
+result) → 3) local
 dictionary, inflected form (shown as "approximate match") → 4) MyMemory →
 5) model, last resort.
 
@@ -107,8 +109,10 @@ PYTHONPATH=src python -m bot
 | `ANTHROPIC_API_KEY` | no | — | enables `/check`, "Як сказати?", model fallback |
 | `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | model name (stored with each correction) |
 | `LLM_DAILY_LIMIT` | no | `200` | max paid model calls per day (all users) |
+| `LLM_USER_DAILY_LIMIT` | no | `30` | max model calls per user per day (in memory) |
 | `ADMIN_IDS` | no | — | comma-separated Telegram IDs allowed to use `/stats` |
 | `DATABASE_PATH` | no | `data/runtime/bot.sqlite3` | SQLite file (git-ignored) |
+| `DICTIONARY_PATH` | no | `data/dictionary.tsv` | generated dictionary file |
 | `STORE_RAW_TEXT` | no | `false` | store the full checked text (off by default) |
 | `RETENTION_DAYS` | no | `180` | stored corrections are deleted after this |
 | `MAX_INPUT_LENGTH` | no | `1000` | max characters per message |
@@ -134,7 +138,9 @@ provider's variables, never in the repository.
   explanation, model name, prompt version and your rating; aggregated counters.
 * Not stored: names, usernames, message history, full texts (unless
   `STORE_RAW_TEXT=true`).
-* Logs contain no message text; tokens are redacted.
+* Logs contain no message text (library loggers that could print updates are
+  kept at WARNING even with `LOG_LEVEL=DEBUG`); tokens/keys are redacted,
+  tracebacks included.
 * `/delete_my_data` removes everything linked to your ID; old records are
   purged after `RETENTION_DAYS`.
 

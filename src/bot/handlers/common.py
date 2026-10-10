@@ -36,7 +36,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     max_len = svc.settings.max_input_length
     text = (
         "📖 <b>Як користуватися</b>\n\n"
-        "• <b>Слово</b>: локальний словник, потім Wiktionary, потім MyMemory; "
+        "• <b>Слово</b>: локальний словник, потім Wiktionary (для українських слів), потім MyMemory; "
         "мовна модель — лише як останній варіант.\n"
         "• <b>Фраза</b>: MyMemory, а якщо недоступний — мовна модель.\n"
         "• Під відповіддю завжди вказано фактичне джерело.\n"

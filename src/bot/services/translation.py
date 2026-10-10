@@ -86,10 +86,12 @@ class TranslationService:
         self._metric("source.mymemory", int((time.monotonic() - started) * 1000))
         return None if _same(res.text, text) else res
 
-    async def _llm_translate(self, text: str, direction: Direction) -> TranslationResult | None:
+    async def _llm_translate(
+        self, text: str, direction: Direction, user_id: int | None = None
+    ) -> TranslationResult | None:
         if self.llm is None or self.llm_budget is None:
             return None
-        if not await self.llm_budget.try_consume():
+        if not await self.llm_budget.try_consume(user_id):
             return None
         started = time.monotonic()
         try:
@@ -122,7 +124,7 @@ class TranslationService:
             lookup.uk_word = entries[0].uk
 
     # ----------------------------------------------------------------- words
-    async def translate_word(self, word: str, direction: Direction) -> WordLookup:
+    async def translate_word(self, word: str, direction: Direction, user_id: int | None = None) -> WordLookup:
         if direction is Direction.AUTO:
             raise ValueError("direction must be explicit")
         lookup = WordLookup(query=word, direction=direction)
@@ -155,7 +157,7 @@ class TranslationService:
             return lookup
 
         # 3. External translator, 4. model as the last resort
-        result = await self._mymemory(word, direction) or await self._llm_translate(word, direction)
+        result = await self._mymemory(word, direction) or await self._llm_translate(word, direction, user_id)
         if result is None:
             raise TranslationUnavailable()
         lookup.result = result
@@ -167,17 +169,23 @@ class TranslationService:
         return lookup
 
     # --------------------------------------------------------------- phrases
-    async def translate_phrase(self, text: str, direction: Direction) -> TranslationResult:
+    async def translate_phrase(
+        self, text: str, direction: Direction, user_id: int | None = None
+    ) -> TranslationResult:
         if direction is Direction.AUTO:
             raise ValueError("direction must be explicit")
-        result = await self._mymemory(text, direction) or await self._llm_translate(text, direction)
+        result = await self._mymemory(text, direction) or await self._llm_translate(text, direction, user_id)
         if result is None:
             raise TranslationUnavailable()
         return result
 
-    async def natural_ukrainian(self, text: str) -> TranslationResult:
+    async def natural_ukrainian(self, text: str, user_id: int | None = None) -> TranslationResult:
         """'Як сказати?': natural Ukrainian for a Russian/mixed phrase."""
-        if self.llm is not None and self.llm_budget is not None and await self.llm_budget.try_consume():
+        if (
+            self.llm is not None
+            and self.llm_budget is not None
+            and await self.llm_budget.try_consume(user_id)
+        ):
             started = time.monotonic()
             try:
                 out = (await self.llm.natural_phrase(text)).strip().strip('"«»').strip()

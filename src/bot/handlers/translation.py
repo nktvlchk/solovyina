@@ -6,8 +6,8 @@ import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bot.formatting import esc
-from bot.handlers.util import reply_html, services, user_id
+from bot.formatting import esc, esc_line
+from bot.handlers.util import has_real_user, reply_html, services, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS, Source, TranslationResult
 from bot.services.translation import TranslationUnavailable, WordLookup
@@ -38,7 +38,7 @@ async def cmd_direction(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     current = svc.user_settings.get_direction(user_id(update))
     await reply_html(
         update.effective_message,
-        f"🧭 Зараз: <b>{esc(DIRECTION_LABELS[current])}</b>.\nОберіть напрям перекладу:",
+        f"🧭 Зараз: <b>{esc_line(DIRECTION_LABELS[current])}</b>.\nОберіть напрям перекладу:",
         reply_markup=direction_keyboard("dir0", include_auto=True),
     )
 
@@ -80,6 +80,8 @@ async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -
     """Shared input checks. Returns False if the request must not proceed."""
     svc = services(context)
     uid = user_id(update)
+    if not has_real_user(update):
+        return False
     if not svc.rate_limiter.allow(uid):
         svc.metrics.incr("rate_limited")
         await update.effective_message.reply_text("⏳ Забагато запитів. Спробуйте за хвилину.")
@@ -97,7 +99,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message is None or not message.text:
         return
     text = message.text.strip()
-    if not text:
+    if not text or not has_real_user(update):
         return
 
     # Mode buttons and one-shot modes (/check, /say, Поясни слово)
@@ -135,10 +137,10 @@ async def _translate_and_reply(
     async with svc.concurrency():
         try:
             if is_word:
-                lookup = await svc.translation.translate_word(text, direction)
+                lookup = await svc.translation.translate_word(text, direction, user_id(update))
                 reply, tts_text = format_word(lookup), lookup.uk_word
             else:
-                result = await svc.translation.translate_phrase(text, direction)
+                result = await svc.translation.translate_phrase(text, direction, user_id(update))
                 reply = format_phrase(text, result)
                 tts_text = result.text if direction is Direction.RU_UK else text
         except TranslationUnavailable:
@@ -171,7 +173,7 @@ def _source_line(result: TranslationResult) -> str:
 
 
 def format_word(lookup: WordLookup) -> str:
-    lines = [f"<b>{esc(lookup.query)}</b>"]
+    lines = [f"<b>{esc_line(lookup.query)}</b>"]
     if lookup.matched_form:
         lines.append(f"<i>(форма слова «{esc(lookup.matched_form)}»)</i>")
     lines.append("")
@@ -179,10 +181,10 @@ def format_word(lookup: WordLookup) -> str:
         for e in lookup.entries[:6]:
             target = e.ru if lookup.direction is Direction.UK_RU else e.uk
             tag = " ".join(x for x in (e.pos, e.gender) if x)
-            lines.append(f"• {esc(target)}" + (f" <i>{esc(tag)}</i>" if tag else ""))
+            lines.append(f"• {esc(target)}" + (f" <i>{esc_line(tag)}</i>" if tag else ""))
         example = next((e.example for e in lookup.entries if e.example), "")
         if example:
-            lines.append(f"💬 <i>{esc(example)}</i>")
+            lines.append(f"💬 <i>{esc_line(example)}</i>")
     elif lookup.result and lookup.result.source is not Source.WIKTIONARY:
         lines.append(esc(lookup.result.text))
     if lookup.result:
@@ -191,9 +193,9 @@ def format_word(lookup: WordLookup) -> str:
     w = lookup.wiktionary
     if w:
         lines.append("")
-        head = f"📖 <b>{esc(w.word)}</b>"
+        head = f"📖 <b>{esc_line(w.word)}</b>"
         if w.pos:
-            head += f" <i>{esc(w.pos)}</i>"
+            head += f" <i>{esc_line(w.pos)}</i>"
         if w.pronunciation:
             head += f"  🔉 [{esc(w.pronunciation)}]"
         lines.append(head)
@@ -202,13 +204,13 @@ def format_word(lookup: WordLookup) -> str:
         if w.synonyms:
             lines.append(f"🔹 Синоніми: {esc(', '.join(w.synonyms))}")
         if w.examples:
-            lines.append(f"💬 <i>{esc(w.examples[0])}</i>")
+            lines.append(f"💬 <i>{esc_line(w.examples[0])}</i>")
         lines.append(f'<i>Wiktionary, CC BY-SA 4.0: <a href="{esc(w.url)}">сторінка</a></i>')
     return "\n".join(lines)
 
 
 def format_phrase(original: str, result: TranslationResult) -> str:
-    return f"<b>{esc(original)}</b>\n\n{esc(result.text)}\n\n{_source_line(result)}"
+    return f"<b>{esc_line(original)}</b>\n\n{esc(result.text)}\n\n{_source_line(result)}"
 
 
 async def on_tts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -224,11 +226,11 @@ async def on_tts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     started = time.monotonic()
     try:
-        async with svc.concurrency(), svc.tts.synthesize(text) as path:
-            with path.open("rb") as audio:
-                await query.message.reply_voice(voice=audio, caption=f"🔊 {text[:100]}")
+        async with svc.concurrency():
+            audio = await svc.tts.synthesize(text)
     except TtsError:
         svc.metrics.incr("provider_error.tts")
         await query.message.reply_text("⚠️ Не вдалося озвучити. Спробуйте пізніше.")
         return
+    await query.message.reply_voice(voice=audio, caption=f"🔊 {text[:100]}")
     svc.metrics.incr("tts.requests", int((time.monotonic() - started) * 1000))
