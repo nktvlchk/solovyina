@@ -75,7 +75,7 @@ src/bot/
 data/                             dictionary + sources (see data/README.md)
 scripts/                          build_dictionary.py, check_secrets.py
 tests/                            pytest, no network
-drip.py + deck.json               optional spaced-repetition poster for a group chat
+drip.py                           optional spaced-repetition poster for a class chat (deck hosted privately)
 ```
 
 Every translation returns `TranslationResult(text, source, confidence, metadata)`

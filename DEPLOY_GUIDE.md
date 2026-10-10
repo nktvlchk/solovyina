@@ -70,8 +70,25 @@ bot token or API key is replaced with `[REDACTED]`. Do not set
 
 ## Optional: spaced-repetition poster (`drip.py`)
 
-A separate, stdlib-only process that posts cards from `deck.json` to a group
-chat three times a day. Run it as a second Railway service with start command
-`python drip.py` and variables `TELEGRAM_BOT_TOKEN`, `DRIP_CHAT_ID` (and
-optionally `DRIP_START`, `DRIP_SLOTS`, `DRIP_TZ`). The chat ID is configuration,
-not code: never hard-code it.
+A separate, stdlib-only process that posts study cards to a class chat three
+times a day (new card plus repeats after 2, 6, 15 and 35 days).
+
+The deck itself is **not** stored in this public repository: class material
+stays private. Put the deck file (Markdown format, see `docs/deck.example.md`)
+into a **secret GitHub gist** and use its *Raw* URL.
+
+Railway setup: a second service from this repository with
+- Custom Start Command: `python drip.py`
+- Variables: `TELEGRAM_BOT_TOKEN` (a bot that is a member of the chat),
+  `DRIP_CHAT_ID`, `DRIP_DECK_URL` (raw gist URL), optionally `DRIP_START`,
+  `DRIP_SLOTS`, `DRIP_TZ`.
+
+The deck is re-downloaded before every slot, so editing the gist updates the
+cards without a redeploy. Cards are scheduled by their position: append new
+cards to the end so the existing schedule does not shift. The chat ID is
+configuration, never code.
+
+## Build note
+
+If a build fails with "No GitHub artifact attestations found for python",
+add the variable `MISE_PYTHON_GITHUB_ATTESTATIONS=false` to the service.

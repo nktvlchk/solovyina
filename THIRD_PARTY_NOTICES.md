@@ -37,14 +37,17 @@ Rows from this source are marked `source=apertium`.
 ### Manual dictionary entries
 
 `data/sources/manual_dictionary.tsv` (rows marked `source=manual`) was migrated
-from the former `big_dictionary.py`. **Its origin is not documented.** It is
+from the former `big_dictionary.py`. **Its origin is not documented** (the owner
+does not remember how it was compiled). It is
 not claimed as original work of this project. See `data/README.md` — the owner
 must confirm the origin before this data can be treated as cleared.
 
 ### Spaced-repetition deck
 
-`deck.json` contains study cards used by `drip.py`. Origin to be confirmed by
-the owner (see `data/README.md`).
+The class card deck used by `drip.py` is derived from course materials and is
+therefore **not** distributed with this project. It is loaded at runtime from
+a private location (`DRIP_DECK_URL`). `docs/deck.example.md` contains only
+synthetic example cards.
 
 ## External services used at runtime (not bundled)
 

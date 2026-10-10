@@ -6,7 +6,7 @@
 | `sources/manual_dictionary.tsv` | ~1 900 hand-made entries with examples (was `big_dictionary.py`) | **Unknown** — no source recorded in the repository | ⚠️ **Blocking question for the owner**: who wrote it, was it generated, copied from a book/site/course? |
 | `overrides.tsv` | Reviewed corrections applied on top of the sources | This project | Every row must have a `reason` |
 | `dictionary.tsv` | Generated lookup table used by the bot | `scripts/build_dictionary.py` | Do not edit by hand |
-| `../deck.json` | Study cards for `drip.py` | Not recorded | ⚠️ Owner to confirm the cards are original (not copied from course materials) |
+| class card deck | Study cards for `drip.py` | Compiled from the owner's class materials | **Not in this repository**: hosted privately, loaded via `DRIP_DECK_URL`. `docs/deck.example.md` is a synthetic example |
 
 ## Removed data
 
