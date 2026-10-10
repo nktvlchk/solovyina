@@ -26,3 +26,23 @@ async def test_any_message_gets_redirect():
     sent = update.effective_message.sent[-1]
     assert "переїхав" in sent["text"]
     assert sent["reply_markup"].inline_keyboard[0][0].url.endswith("solovyinamova_bot")
+
+
+def test_redirect_ignores_group_chats():
+    from telegram.ext import MessageHandler
+
+    app = build_redirect_application("123456:TEST", "solovyinamova_bot")
+    handler = next(h for h in app.handlers[0] if isinstance(h, MessageHandler))
+    assert "PRIVATE" in repr(handler.filters).upper()
+
+
+def test_main_bot_handlers_are_private_only():
+    from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler
+
+    from bot.handlers import register_handlers
+
+    app = ApplicationBuilder().token("123456:TEST").build()
+    register_handlers(app)
+    for handler in app.handlers[0]:
+        if isinstance(handler, (CommandHandler, MessageHandler)):
+            assert "PRIVATE" in repr(handler.filters).upper(), handler

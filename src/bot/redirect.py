@@ -1,7 +1,7 @@
 """Redirect mode for a retired bot.
 
 Run the same code with the OLD bot's token and REDIRECT_TO_BOT=@new_bot:
-every message, command or button press gets a short "we moved" reply with a
+every private message, command or button press gets a short "we moved" reply with a
 link. No dictionary, database or external services are loaded.
 """
 
@@ -46,6 +46,7 @@ def build_redirect_application(token: str, new_bot: str) -> Application:
         await app.bot.set_my_short_description(f"Бот переїхав: @{new_bot}")
 
     app = ApplicationBuilder().token(token).post_init(post_init).build()
-    app.add_handler(MessageHandler(filters.ALL, on_any))
+    # Private chats only: in a group the old bot must stay silent.
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE, on_any))
     app.add_handler(CallbackQueryHandler(on_any))
     return app
