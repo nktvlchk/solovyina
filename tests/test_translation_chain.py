@@ -1,7 +1,7 @@
 import pytest
 
 from bot.language import Direction
-from bot.models.translation import Source, WiktionaryEntry
+from bot.models.translation import Source, TranslationResult, WiktionaryEntry
 from bot.services.translation import TranslationUnavailable
 from tests.conftest import FakeLLM, FakeMyMemory, FakeWiktionary
 
@@ -25,16 +25,47 @@ async def test_word_wiktionary_second(make_services):
     assert mm.calls == []
 
 
-async def test_word_mymemory_third_and_labeled_correctly(make_services):
+async def test_word_claude_after_dictionary_and_labeled_correctly(make_services):
     mm = FakeMyMemory({"зюзюкало": "штуковина"})
     llm = FakeLLM(translate="штука")
     svc = make_services(mymemory=mm, llm=llm, ANTHROPIC_API_KEY="k")
     lookup = await svc.translation.translate_word("зюзюкало", Direction.UK_RU)
-    assert lookup.result.source is Source.MYMEMORY  # not "google", not "llm"
-    assert llm.calls == []
+    assert lookup.result.source is Source.LLM
+    assert mm.calls == []  # no need to ask the next provider
 
 
-async def test_word_llm_last_resort(make_services):
+async def test_word_mymemory_when_no_model(make_services):
+    mm = FakeMyMemory({"зюзюкало": "штуковина"})
+    svc = make_services(mymemory=mm)
+    lookup = await svc.translation.translate_word("зюзюкало", Direction.UK_RU)
+    assert lookup.result.source is Source.MYMEMORY
+
+
+async def test_wrong_language_answer_is_rejected(make_services):
+    # the real bug: MyMemory answered a ru->uk request in Russian
+    mm = FakeMyMemory({"давай проверим": "Ну давай выясним, так ли это, а?"})
+    svc = make_services(mymemory=mm)
+    with pytest.raises(TranslationUnavailable):
+        await svc.translation.translate_phrase("давай проверим", Direction.RU_UK)
+
+
+async def test_google_between_claude_and_mymemory(make_services):
+    class FakeGoogle:
+        def __init__(self):
+            self.calls = []
+
+        async def translate(self, text, source, target):
+            self.calls.append(text)
+            return TranslationResult(text="давай перевіримо", source=Source.GOOGLE)
+
+    mm = FakeMyMemory({"давай проверим": "давай перевіримо"})
+    google = FakeGoogle()
+    svc = make_services(mymemory=mm, google=google, llm=FakeLLM(fail=True), ANTHROPIC_API_KEY="k")
+    result = await svc.translation.translate_phrase("давай проверим", Direction.RU_UK)
+    assert result.source is Source.GOOGLE and mm.calls == []
+
+
+async def test_word_llm_when_translator_down(make_services):
     llm = FakeLLM(translate="штуковина")
     svc = make_services(mymemory=FakeMyMemory(fail=True), llm=llm, ANTHROPIC_API_KEY="k")
     lookup = await svc.translation.translate_word("зюзюкало", Direction.UK_RU)
@@ -92,3 +123,28 @@ async def test_auto_direction_rejected(make_services):
     svc = make_services()
     with pytest.raises(ValueError):
         await svc.translation.translate_phrase("x y", Direction.AUTO)
+
+
+# --------------------------------------------------------- Claude auto mode
+
+AUTO_RU = '{"source": "ru", "translation": "Давай перевіримо"}'
+AUTO_UK = '{"source": "uk", "translation": "Давай проверим"}'
+
+
+async def test_auto_translate_detects_direction(make_services):
+    svc = make_services(llm=FakeLLM(auto=AUTO_RU), ANTHROPIC_API_KEY="k")
+    result, direction = await svc.translation.translate_auto("давай проверим")
+    assert result.text == "Давай перевіримо" and result.source is Source.LLM
+    assert direction is Direction.RU_UK
+    svc2 = make_services(llm=FakeLLM(auto=AUTO_UK), ANTHROPIC_API_KEY="k")
+    assert (await svc2.translation.translate_auto("давай перевіримо"))[1] is Direction.UK_RU
+
+
+async def test_auto_translate_rejects_bad_output(make_services):
+    for raw in ("not json", '{"source": "ru", "translation": "Давай выясним"}', '{"source": "xx"}'):
+        svc = make_services(llm=FakeLLM(auto=raw), ANTHROPIC_API_KEY="k")
+        assert await svc.translation.translate_auto("давай проверим") is None
+
+
+async def test_auto_translate_off_without_key(make_services):
+    assert await make_services().translation.translate_auto("давай проверим") is None

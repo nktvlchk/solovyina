@@ -1,19 +1,24 @@
 """Translation chain.
 
-Single word:  local dictionary -> Wiktionary -> MyMemory -> model (last resort)
-Phrase:       MyMemory -> model;   "natural phrasing" mode: model -> MyMemory
+Single word:  local dictionary -> Wiktionary -> Claude -> Google Translate -> MyMemory
+Phrase:       Claude -> Google Translate -> MyMemory
+"Як сказати?": Claude (natural phrasing prompt) -> Google Translate -> MyMemory
 
-Providers are called one after another, never all at once. Each result
-carries the source that ACTUALLY produced it.
+Claude is used only when ANTHROPIC_API_KEY is set and the daily budget allows;
+Google Translate only when GOOGLE_TRANSLATE_API_KEY is set. Providers are
+called one after another, never all at once. Every answer must look like the
+target language (e.g. no ы/э/ё/ъ in a Ukrainian result), otherwise the next
+provider is tried. Each result carries the source that ACTUALLY produced it.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 
-from bot.language import Direction
+from bot.language import Direction, Lang
 from bot.models.translation import (
     DictionaryEntry,
     Source,
@@ -47,6 +52,30 @@ def _same(a: str, b: str) -> bool:
     return normalize(a) == normalize(b)
 
 
+_ONLY_RU = set("ыэёъ")
+_ONLY_UK = set("іїєґ")
+
+
+def looks_like_target(text: str, target: Lang) -> bool:
+    """Reject answers written in the wrong language (a frequent failure of
+    translation memories such as MyMemory)."""
+    low = text.lower()
+    if target is Lang.UK:
+        return not any(ch in _ONLY_RU for ch in low)
+    if target is Lang.RU:
+        return not any(ch in _ONLY_UK for ch in low)
+    return True
+
+
+def _plausible(out: str, text: str, direction: Direction) -> bool:
+    return (
+        bool(out)
+        and not _same(out, text)
+        and len(out) <= max(300, len(text) * 6)
+        and looks_like_target(out, direction.target)
+    )
+
+
 class TranslationService:
     def __init__(
         self,
@@ -56,7 +85,9 @@ class TranslationService:
         llm=None,
         llm_budget: LlmBudget | None = None,
         metrics: MetricsRepository | None = None,
+        google=None,
     ):
+        self.google = google
         self.dictionary = dictionary
         self.wiktionary = wiktionary
         self.mymemory = mymemory
@@ -84,7 +115,32 @@ class TranslationService:
             self._metric("provider_error.mymemory")
             return None
         self._metric("source.mymemory", int((time.monotonic() - started) * 1000))
-        return None if _same(res.text, text) else res
+        if not _plausible(res.text, text, direction):
+            self._metric("provider_error.mymemory_rejected")
+            return None
+        return res
+
+    async def _google(self, text: str, direction: Direction) -> TranslationResult | None:
+        if self.google is None:
+            return None
+        started = time.monotonic()
+        try:
+            res = await self.google.translate(text, direction.source.value, direction.target.value)
+        except ProviderError:
+            self._metric("provider_error.google")
+            return None
+        self._metric("source.google", int((time.monotonic() - started) * 1000))
+        return res if _plausible(res.text, text, direction) else None
+
+    async def _external(
+        self, text: str, direction: Direction, user_id: int | None
+    ) -> TranslationResult | None:
+        """Claude -> Google Translate -> MyMemory, first plausible answer wins."""
+        return (
+            await self._llm_translate(text, direction, user_id)
+            or await self._google(text, direction)
+            or await self._mymemory(text, direction)
+        )
 
     async def _llm_translate(
         self, text: str, direction: Direction, user_id: int | None = None
@@ -101,7 +157,7 @@ class TranslationService:
             return None
         self._metric("source.llm", int((time.monotonic() - started) * 1000))
         out = out.strip().strip('"«»').strip()
-        if not out or _same(out, text) or len(out) > max(300, len(text) * 6):
+        if not _plausible(out, text, direction):
             return None
         return TranslationResult(text=out, source=Source.LLM, metadata={"model": self.llm.model})
 
@@ -156,8 +212,8 @@ class TranslationService:
         if lookup.result is not None:
             return lookup
 
-        # 3. External translator, 4. model as the last resort
-        result = await self._mymemory(word, direction) or await self._llm_translate(word, direction, user_id)
+        # 3. Claude -> Google Translate -> MyMemory
+        result = await self._external(word, direction, user_id)
         if result is None:
             raise TranslationUnavailable()
         lookup.result = result
@@ -168,13 +224,46 @@ class TranslationService:
             lookup.uk_word = normalize(word)
         return lookup
 
+    # ------------------------------------------------------------ auto (Claude)
+    async def translate_auto(
+        self, text: str, user_id: int | None = None
+    ) -> tuple[TranslationResult, Direction] | None:
+        """Claude detects the language itself and translates into the other one.
+        Returns None when the model is unavailable or its answer is unusable,
+        so the caller can fall back to the heuristic chain."""
+        if self.llm is None or self.llm_budget is None or not hasattr(self.llm, "translate_auto"):
+            return None
+        if not await self.llm_budget.try_consume(user_id):
+            return None
+        started = time.monotonic()
+        try:
+            raw = await self.llm.translate_auto(text)
+        except ProviderError:
+            self._metric("provider_error.llm")
+            return None
+        self._metric("source.llm", int((time.monotonic() - started) * 1000))
+        try:
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
+            data = json.loads(cleaned[cleaned.find("{") : cleaned.rfind("}") + 1])
+            source = Lang(str(data["source"]).lower())
+            out = str(data["translation"]).strip()
+        except (ValueError, KeyError, TypeError):
+            self._metric("provider_error.llm_parse")
+            return None
+        if source is Lang.UNKNOWN:
+            return None
+        direction = Direction.from_source(source)
+        if not _plausible(out, text, direction):
+            return None
+        return TranslationResult(text=out, source=Source.LLM, metadata={"model": self.llm.model}), direction
+
     # --------------------------------------------------------------- phrases
     async def translate_phrase(
         self, text: str, direction: Direction, user_id: int | None = None
     ) -> TranslationResult:
         if direction is Direction.AUTO:
             raise ValueError("direction must be explicit")
-        result = await self._mymemory(text, direction) or await self._llm_translate(text, direction, user_id)
+        result = await self._external(text, direction, user_id)
         if result is None:
             raise TranslationUnavailable()
         return result
@@ -193,9 +282,9 @@ class TranslationService:
                 self._metric("provider_error.llm")
             else:
                 self._metric("source.llm", int((time.monotonic() - started) * 1000))
-                if out and len(out) <= max(300, len(text) * 6):
+                if _plausible(out, "", Direction.RU_UK):
                     return TranslationResult(text=out, source=Source.LLM, metadata={"model": self.llm.model})
-        result = await self._mymemory(text, Direction.RU_UK)
+        result = await self._google(text, Direction.RU_UK) or await self._mymemory(text, Direction.RU_UK)
         if result is None:
             raise TranslationUnavailable()
         return result

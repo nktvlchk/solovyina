@@ -11,6 +11,7 @@ class Source(StrEnum):
     DICTIONARY = "dictionary"  # local data/dictionary.tsv
     WIKTIONARY = "wiktionary"
     MYMEMORY = "mymemory"
+    GOOGLE = "google"
     LLM = "llm"
 
 
@@ -18,6 +19,7 @@ SOURCE_LABELS = {
     Source.DICTIONARY: "локальний словник",
     Source.WIKTIONARY: "Wiktionary (CC BY-SA)",
     Source.MYMEMORY: "MyMemory",
+    Source.GOOGLE: "Google Translate",
     Source.LLM: "мовна модель (може помилятися)",
 }
 

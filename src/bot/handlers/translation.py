@@ -21,6 +21,7 @@ DIRECTION_LABELS = {
     Direction.AUTO: "Автовизначення",
 }
 PENDING_KEY = "pending_text"
+LAST_DIRECTION_KEY = "last_direction"
 
 
 def direction_keyboard(prefix: str, include_auto: bool) -> InlineKeyboardMarkup:
@@ -112,15 +113,50 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     svc = services(context)
     direction, detected = _resolve_direction(svc, user_id(update), text)
-    if direction is Direction.AUTO:
-        context.user_data[PENDING_KEY] = text  # in memory only
-        await reply_html(
-            message,
-            "🤔 Не можу впевнено визначити мову. Оберіть напрям:",
-            reply_markup=direction_keyboard("dir1", include_auto=False),
-        )
+    # Main path: Claude detects ru/uk itself and translates into the other language.
+    use_auto = svc.user_settings.get_direction(user_id(update)) is Direction.AUTO and not (
+        _exact_dictionary_word(svc, text, direction)
+    )
+    if use_auto and await _auto_translate_and_reply(update, context, text):
         return
-    await _translate_and_reply(update, context, text, direction, detected)
+    guessed = False
+    if direction is Direction.AUTO:
+        # Not sure about the language: don't interrupt the user with a question.
+        # Use their last direction (most users type Russian and want Ukrainian)
+        # and, if that yields nothing, try the opposite direction.
+        direction = context.user_data.get(LAST_DIRECTION_KEY, Direction.RU_UK)
+        guessed = True
+    await _translate_and_reply(update, context, text, direction, detected, guessed=guessed)
+
+
+def _exact_dictionary_word(svc, text: str, direction: Direction) -> bool:
+    """A single word with an exact dictionary hit: answered locally (instant,
+    free, several meanings, stress from Wiktionary)."""
+    if len(text.split()) != 1 or direction is Direction.AUTO:
+        return False
+    lookup = svc.dictionary.lookup_uk if direction is Direction.UK_RU else svc.dictionary.lookup_ru
+    entries, form = lookup(text)
+    return bool(entries) and form is None
+
+
+async def _auto_translate_and_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+    svc = services(context)
+    started = time.monotonic()
+    async with svc.concurrency():
+        auto = await svc.translation.translate_auto(text, user_id(update))
+    if auto is None:
+        return False
+    result, direction = auto
+    context.user_data[LAST_DIRECTION_KEY] = direction
+    svc.metrics.incr("requests.auto", int((time.monotonic() - started) * 1000))
+    reply = format_phrase(text, result)
+    tts_text = result.text if direction is Direction.RU_UK else text
+    markup = None
+    if tts_text and len(tts_text) <= svc.settings.max_tts_length:
+        key = svc.text_cache.put(tts_text)
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts:{key}")]])
+    await reply_html(update.effective_message, reply, reply_markup=markup)
+    return True
 
 
 async def _translate_and_reply(
@@ -129,35 +165,47 @@ async def _translate_and_reply(
     text: str,
     direction: Direction,
     detected: bool,
+    guessed: bool = False,
 ) -> None:
     svc = services(context)
     message = update.effective_message
     is_word = len(text.split()) == 1
     started = time.monotonic()
+    # When the language was only guessed, try the opposite direction too.
+    attempts = [direction]
+    if guessed:
+        attempts.append(Direction.UK_RU if direction is Direction.RU_UK else Direction.RU_UK)
+    reply = tts_text = None
     async with svc.concurrency():
-        try:
-            if is_word:
-                lookup = await svc.translation.translate_word(text, direction, user_id(update))
-                reply, tts_text = format_word(lookup), lookup.uk_word
-            else:
-                result = await svc.translation.translate_phrase(text, direction, user_id(update))
-                reply = format_phrase(text, result)
-                tts_text = result.text if direction is Direction.RU_UK else text
-        except TranslationUnavailable:
-            svc.metrics.incr("provider_error.all")
-            await reply_html(
-                message,
-                "😔 Зараз не вдалося перекласти: зовнішні сервіси недоступні, "
-                "а в локальному словнику цього немає. Спробуйте пізніше або інше написання.",
-            )
-            return
+        for attempt in attempts:
+            try:
+                if is_word:
+                    lookup = await svc.translation.translate_word(text, attempt, user_id(update))
+                    reply, tts_text = format_word(lookup), lookup.uk_word
+                else:
+                    result = await svc.translation.translate_phrase(text, attempt, user_id(update))
+                    reply = format_phrase(text, result)
+                    tts_text = result.text if attempt is Direction.RU_UK else text
+            except TranslationUnavailable:
+                continue
+            direction = attempt
+            break
+    if reply is None:
+        svc.metrics.incr("provider_error.all")
+        await reply_html(
+            message,
+            "😔 Зараз не вдалося перекласти: зовнішні сервіси недоступні, "
+            "а в локальному словнику цього немає. Спробуйте пізніше або інше написання.",
+        )
+        return
+    context.user_data[LAST_DIRECTION_KEY] = direction
     svc.metrics.incr(
         "requests.word" if is_word else "requests.phrase",
         int((time.monotonic() - started) * 1000),
     )
     if detected:
         label = esc(DIRECTION_LABELS[direction])
-        reply += f"\n\n<i>Напрям визначено автоматично: {label}. Змінити: /direction</i>"
+        reply += f"\n\n<i>{label}. Закріпити інший напрям: /direction</i>"
     markup = None
     if tts_text and len(tts_text) <= svc.settings.max_tts_length:
         key = svc.text_cache.put(tts_text)

@@ -19,9 +19,14 @@ def main() -> None:
         sys.exit(2)
     setup_logging(settings.log_level)
 
-    from bot.app import build_application
+    if settings.redirect_to_bot:
+        from bot.redirect import build_redirect_application
 
-    app = build_application(settings)
+        app = build_redirect_application(settings.telegram_bot_token, settings.redirect_to_bot)
+    else:
+        from bot.app import build_application
+
+        app = build_application(settings)
     app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
 
 

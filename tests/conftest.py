@@ -54,8 +54,9 @@ class FakeMyMemory:
 class FakeLLM:
     model = "fake-model"
 
-    def __init__(self, translate="", check="", phrase="", fail=False):
+    def __init__(self, translate="", check="", phrase="", fail=False, auto=""):
         self._translate, self._check, self._phrase, self.fail = translate, check, phrase, fail
+        self._auto = auto
         self.calls: list[str] = []
 
     async def translate(self, text, source, target):
@@ -63,6 +64,12 @@ class FakeLLM:
         if self.fail:
             raise ProviderError("anthropic", "APIError")
         return self._translate
+
+    async def translate_auto(self, text):
+        self.calls.append("auto")
+        if self.fail or not self._auto:
+            raise ProviderError("anthropic", "APIError")
+        return self._auto
 
     async def natural_phrase(self, text):
         self.calls.append("phrase")
@@ -85,12 +92,13 @@ def make_settings(**overrides) -> Settings:
 
 @pytest.fixture
 def make_services():
-    def _make(llm=None, wiktionary=None, mymemory=None, **settings):
+    def _make(llm=None, wiktionary=None, mymemory=None, google=None, **settings):
         return build_services(
             make_settings(**settings),
             llm=llm,
             wiktionary=wiktionary or FakeWiktionary(),
             mymemory=mymemory or FakeMyMemory(),
+            google=google,
         )
 
     return _make

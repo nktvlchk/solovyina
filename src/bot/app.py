@@ -71,7 +71,7 @@ class Services:
     http_client: object = None
 
 
-def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None) -> Services:
+def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None, google=None) -> Services:
     db = Database(settings.database_path)
     metrics = MetricsRepository(db)
     corrections = CorrectionsRepository(db)
@@ -81,6 +81,11 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None)
         client = make_client(settings.http_timeout_seconds)
     wiktionary = wiktionary or WiktionaryProvider(client)
     mymemory = mymemory or MyMemoryProvider(client)
+    if google is None and settings.google_translate_api_key:
+        from bot.providers.google import GoogleTranslateProvider
+
+        client = client or make_client(settings.http_timeout_seconds)
+        google = GoogleTranslateProvider(client, settings.google_translate_api_key)
     if llm is None and settings.llm_enabled:
         from bot.providers.anthropic import AnthropicProvider
 
@@ -91,15 +96,16 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None)
         else None
     )
     logger.info(
-        "dictionary: %d headwords; model features: %s",
+        "dictionary: %d headwords; model features: %s; google translate: %s",
         len(dictionary),
         "on" if llm is not None else "off (no ANTHROPIC_API_KEY)",
+        "on" if google is not None else "off (no GOOGLE_TRANSLATE_API_KEY)",
     )
     return Services(
         settings=settings,
         db=db,
         dictionary=dictionary,
-        translation=TranslationService(dictionary, wiktionary, mymemory, llm, budget, metrics),
+        translation=TranslationService(dictionary, wiktionary, mymemory, llm, budget, metrics, google),
         correction=CorrectionService(llm, budget, corrections, metrics, settings.store_raw_text),
         tts=TtsService(settings.max_tts_length),
         user_settings=SettingsRepository(db),

@@ -39,8 +39,8 @@ did I get wrong".
 
 | Feature | How |
 |---|---|
-| Word translation uk ⇄ ru | local dictionary (~10 800 headwords) → Wiktionary → MyMemory → model (last resort) |
-| Phrase translation | MyMemory → model (if configured) → clear error |
+| Translation ru ⇄ uk | Claude detects the language and translates; dictionary for single known words; Google Translate / MyMemory as fallback |
+| `/check` | explanations in Ukrainian only |
 | "Як сказати?" (natural phrasing) | model → MyMemory fallback |
 | "Перевір мене" (`/check`) | model returns validated JSON: max 3 corrections, error vs style, "no errors" allowed |
 | Feedback per correction | stored with model name and prompt version, re-voting allowed, no duplicates |
@@ -79,15 +79,20 @@ where `source` is the provider that actually produced the answer.
 
 ## Translation order
 
-**Single word:** 1) local dictionary (exact match) → 2) Wiktionary (Ukrainian
-words only; for Russian input it only adds stress/definitions to the Ukrainian
-result) → 3) local
-dictionary, inflected form (shown as "approximate match") → 4) MyMemory →
-5) model, last resort.
+**Main path (any text, direction not pinned):** Claude detects whether the
+text is Russian or Ukrainian and translates it into the other language in one
+call. No language question is asked.
 
-**Phrase:** 1) MyMemory → 2) model → 3) a clear "services unavailable" message.
+**Single word with an exact dictionary hit:** answered locally (instant, free,
+several meanings, part of speech) plus Wiktionary stress/definitions.
 
-**Як сказати?:** 1) model → 2) MyMemory.
+**Fallback (no `ANTHROPIC_API_KEY`, budget exhausted, or a pinned direction):**
+Claude → Google Translate (official API, if `GOOGLE_TRANSLATE_API_KEY` is set) →
+MyMemory. Every answer must look like the target language (e.g. no `ы/э/ё/ъ`
+in a Ukrainian result), otherwise the next provider is tried. If the language
+was only guessed, the opposite direction is tried too.
+
+**Як сказати?:** Claude (natural phrasing) → Google Translate → MyMemory.
 
 Providers are called one after another, never in parallel "just in case".
 If a provider returns the input unchanged, it is not treated as a translation.
@@ -108,10 +113,12 @@ PYTHONPATH=src python -m bot
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | **yes** | — | from @BotFather |
-| `ANTHROPIC_API_KEY` | no | — | enables `/check`, "Як сказати?", model fallback |
+| `ANTHROPIC_API_KEY` | no (recommended) | — | Claude: main translator, `/check`, "Як сказати?" |
+| `GOOGLE_TRANSLATE_API_KEY` | no | — | official Google Cloud Translation API as fallback |
+| `REDIRECT_TO_BOT` | no | — | redirect mode for a retired bot: answers everything with "moved to @…" |
 | `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | model name (stored with each correction) |
-| `LLM_DAILY_LIMIT` | no | `200` | max paid model calls per day (all users) |
-| `LLM_USER_DAILY_LIMIT` | no | `30` | max model calls per user per day (in memory) |
+| `LLM_DAILY_LIMIT` | no | `500` | max paid model calls per day (all users) |
+| `LLM_USER_DAILY_LIMIT` | no | `60` | max model calls per user per day (in memory) |
 | `ADMIN_IDS` | no | — | comma-separated Telegram IDs allowed to use `/stats` |
 | `DATABASE_PATH` | no | `data/runtime/bot.sqlite3` | SQLite file (git-ignored) |
 | `DICTIONARY_PATH` | no | `data/dictionary.tsv` | generated dictionary file |

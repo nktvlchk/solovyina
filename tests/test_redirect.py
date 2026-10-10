@@ -1,0 +1,28 @@
+import pytest
+
+from bot.config import ConfigError
+from bot.redirect import build_redirect_application, moved_keyboard, moved_text
+from tests.conftest import make_settings, make_update
+
+
+def test_redirect_setting_parsing():
+    assert make_settings(REDIRECT_TO_BOT="@solovyinamova_bot").redirect_to_bot == "solovyinamova_bot"
+    assert make_settings().redirect_to_bot is None
+    with pytest.raises(ConfigError):
+        make_settings(REDIRECT_TO_BOT="not a bot!")
+
+
+def test_moved_message_has_link():
+    assert "@solovyinamova_bot" in moved_text("solovyinamova_bot")
+    button = moved_keyboard("solovyinamova_bot").inline_keyboard[0][0]
+    assert button.url == "https://t.me/solovyinamova_bot"
+
+
+async def test_any_message_gets_redirect():
+    app = build_redirect_application("123456:TEST", "solovyinamova_bot")
+    handler = app.handlers[0][0]
+    update = make_update("/check something")
+    await handler.callback(update, None)
+    sent = update.effective_message.sent[-1]
+    assert "переїхав" in sent["text"]
+    assert sent["reply_markup"].inline_keyboard[0][0].url.endswith("solovyinamova_bot")

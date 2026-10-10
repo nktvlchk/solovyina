@@ -127,3 +127,11 @@ async def test_full_text_stored_only_when_enabled(make_services):
     svc = make_services(llm=FakeLLM(check=_resp([GOOD])), ANTHROPIC_API_KEY="k", STORE_RAW_TEXT="true")
     await svc.correction.check(1, TEXT)
     assert svc.db.query("SELECT raw_text FROM corrections")[0]["raw_text"] == TEXT
+
+
+def test_check_prompt_requires_ukrainian_explanations():
+    from bot.providers.anthropic import CHECK_PROMPT_VERSION, CHECK_SYSTEM
+
+    assert "in Ukrainian only, never in Russian" in CHECK_SYSTEM
+    assert "in Russian>" not in CHECK_SYSTEM
+    assert CHECK_PROMPT_VERSION == "check-v3"
