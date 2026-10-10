@@ -9,7 +9,7 @@
 - 📝 **Ударения** — через Wiktionary для украинских слов
 - 📊 **Статистика** — `/stats` покажет топ запросов и время работы бота
 - 🤖 **AI-перевод** — Google Translate + MyMemory как запасной вариант
-- 📚 **Большая база** — встроенный словарь + 8 400+ пар из Apertium
+- 📚 **Словарь** — ~10 800 украинских слов (Apertium rus-ukr + ручные статьи, см. ниже)
 
 ## Как пользоваться
 
@@ -47,9 +47,8 @@ python bot.py
 
 ```
 ├── bot.py              # Главный файл бота
-├── big_dictionary.py   # Расширенный словарь
-├── apertium_dict.py    # 8 400+ пар из Apertium (укр↔рус)
-├── data.py             # Дополнительные данные
+├── data/               # Словарь и его источники (см. data/README.md)
+├── scripts/            # build_dictionary.py
 ├── wiktionary.py       # Модуль ударений
 ├── requirements.txt    # Зависимости Python
 ├── Procfile            # Для Railway
@@ -73,3 +72,13 @@ python bot.py
 5. Перевод через `auto` (язык определяется автоматически)
 
 Благодаря многоуровневому фоллбэку бот переводит даже слова, которые Google возвращает без изменений.
+
+## Источники данных и лицензии
+
+Проект распространяется под **GPL-2.0-or-later** (`LICENSE`), потому что словарь построен на данных Apertium (GPL-2.0).
+
+- **Apertium rus-ukr** — https://github.com/apertium/apertium-rus-ukr, GPL-2.0, файл без изменений в `data/sources/apertium/`.
+- **Wiktionary** (ru.wiktionary.org) — запрашивается во время работы, CC BY-SA 4.0.
+- **Ручной словарь** — происхождение уточняется, см. `data/README.md`.
+
+Подробно: `THIRD_PARTY_NOTICES.md`, `data/README.md`.

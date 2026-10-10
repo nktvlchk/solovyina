@@ -38,14 +38,7 @@ except Exception:  # ai.py відсутній або немає бібліоте
     def ai_enabled():
         return False
 
-from data import DICTIONARY
-from big_dictionary import BIG_DICT
 from wiktionary import lookup_wiktionary, format_wiktionary_entry
-
-try:
-    from apertium_dict import APERTIUM_DICT
-except ImportError:
-    APERTIUM_DICT = {}
 
 load_dotenv()
 
@@ -70,17 +63,32 @@ ADMIN_IDS = {
 # СЛОВНИК — об'єднуємо всі джерела
 # =====================================================================
 
-def _convert_big(entry_tuple):
-    return {"pos": entry_tuple[0], "translation": entry_tuple[1], "example": entry_tuple[2]}
+DICTIONARY_PATH = Path(__file__).with_name("data") / "dictionary.tsv"
 
-ALL_WORDS = {}
-# Пріоритет: APERTIUM < BIG_DICT < DICTIONARY
-for w, e in APERTIUM_DICT.items():
-    ALL_WORDS[w] = _convert_big(e)
-for w, e in BIG_DICT.items():
-    ALL_WORDS[w] = _convert_big(e)
-for w, e in DICTIONARY.items():
-    ALL_WORDS[w] = e  # DICTIONARY перекриває все
+
+def _load_dictionary(path: Path) -> dict:
+    """data/dictionary.tsv -> {uk: {"pos", "translation", "example"}}.
+    Кілька значень одного слова об'єднуються, а не перезаписуються."""
+    words: dict = {}
+    with path.open(encoding="utf-8") as fh:
+        next(fh)
+        for line in fh:
+            uk, ru, pos, gender, _source, example = line.rstrip("\n").split("\t")
+            entry = words.setdefault(uk, {"pos": [], "translation": [], "example": ""})
+            label = " ".join(x for x in (pos, gender) if x)
+            if label and label not in entry["pos"]:
+                entry["pos"].append(label)
+            if ru not in entry["translation"]:
+                entry["translation"].append(ru)
+            if example and not entry["example"]:
+                entry["example"] = example
+    for entry in words.values():
+        entry["pos"] = ", ".join(entry["pos"])
+        entry["translation"] = "; ".join(entry["translation"])
+    return words
+
+
+ALL_WORDS = _load_dictionary(DICTIONARY_PATH)
 
 REVERSE_DICT = {}
 for ukr_word, entry in ALL_WORDS.items():
