@@ -7,7 +7,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from bot.handlers.correction import CODE_TO_VERDICT, VERDICT_LABELS, feedback_keyboard
-from bot.handlers.util import services, user_id
+from bot.handlers.util import services, track, user_id
 
 
 async def on_feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -30,6 +30,7 @@ async def on_feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     changed = svc.corrections.set_verdict(correction_id, uid, verdict)
     if changed:
         svc.metrics.incr(f"feedback.{verdict.value}")
+        track(update, context, "feedback", detail=verdict.value)
     await query.answer(f"Збережено: {VERDICT_LABELS[verdict]}")
     # BadRequest: markup unchanged (same button pressed twice)
     with contextlib.suppress(BadRequest):

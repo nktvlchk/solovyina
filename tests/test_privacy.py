@@ -39,11 +39,15 @@ async def test_stats_without_admin_ids_denied_for_everyone(make_services):
 async def test_admin_stats_are_aggregated_only(make_services):
     svc = make_services(ADMIN_IDS="999", llm=FakeLLM(check=RESP), ANTHROPIC_API_KEY="k")
     await svc.correction.check(424242, "в магазин")
-    svc.metrics.incr("requests.word", 120)
+    svc.analytics.track(424242, "translate", detail="auto", source="llm", ok=True, latency_ms=900)
+    svc.analytics.track(424242, "feedback", detail="error")
+    svc.analytics.track(777, "feedback", detail="not_error")
     update = make_update("/stats", user_id=999)
     await admin.cmd_stats(update, make_context(svc))
     text = update.effective_message.sent[-1]["text"]
-    assert "requests.word" in text
+    assert "Активні користувачі: <b>2</b>" in text
+    assert "це помилка: 1 (50%)" in text and "немає помилки: 1 (50%)" in text
+    assert "llm: 1" in text
     assert "424242" not in text and "магазин" not in text
 
 

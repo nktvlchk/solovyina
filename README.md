@@ -49,7 +49,7 @@ did I get wrong".
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
-| Admin stats | `/stats` for `ADMIN_IDS` only, aggregated counters |
+| Product analytics | `/stats [days]` for `ADMIN_IDS`: active/new/returning users, actions by feature, translation sources, share of "error / not an error / style" ratings, quality per model and prompt version; `/export_stats` sends a CSV of pseudonymous events for 30 days |
 
 Commands: `/start`, `/help`, `/say`, `/check`, `/mistakes`, `/direction`,
 `/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
@@ -144,7 +144,10 @@ provider's variables, never in the repository.
 * Sent to third parties: Wiktionary (single words), MyMemory (translation),
   Anthropic (checks/phrasing, if enabled), Google TTS (only when 🔊 is pressed).
 * Stored: chosen direction; for checks only the corrected fragments, the
-  explanation, model name, prompt version and your rating; aggregated counters.
+  explanation, model name, prompt version and your rating; a product-analytics
+  log of actions (feature, source, direction, success, latency, text length,
+  rating) under a salted pseudonymous key, never the Telegram ID or the text;
+  aggregated counters.
 * Not stored: names, usernames, message history, full texts (unless
   `STORE_RAW_TEXT=true`).
 * Logs contain no message text (library loggers that could print updates are

@@ -7,7 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import has_real_user, reply_html, services, user_id
+from bot.handlers.util import has_real_user, reply_html, services, track, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS, Source, TranslationResult
 from bot.services.translation import TranslationUnavailable, WordLookup
@@ -56,6 +56,7 @@ async def on_direction_callback(update: Update, context: ContextTypes.DEFAULT_TY
     svc = services(context)
     if prefix == "dir0":
         svc.user_settings.set_direction(user_id(update), direction)
+        track(update, context, "direction", direction=direction.value)
         await query.edit_message_text(f"✅ Напрям: {DIRECTION_LABELS[direction]}")
         return
     text = context.user_data.pop(PENDING_KEY, None)
@@ -85,6 +86,7 @@ async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -
         return False
     if not svc.rate_limiter.allow(uid):
         svc.metrics.incr("rate_limited")
+        track(update, context, "rate_limited")
         await update.effective_message.reply_text("⏳ Забагато запитів. Спробуйте за хвилину.")
         return False
     if len(text) > svc.settings.max_input_length:
@@ -148,7 +150,19 @@ async def _auto_translate_and_reply(update: Update, context: ContextTypes.DEFAUL
         return False
     result, direction = auto
     context.user_data[LAST_DIRECTION_KEY] = direction
-    svc.metrics.incr("requests.auto", int((time.monotonic() - started) * 1000))
+    elapsed = int((time.monotonic() - started) * 1000)
+    svc.metrics.incr("requests.auto", elapsed)
+    track(
+        update,
+        context,
+        "translate",
+        detail="auto",
+        source=result.source.value,
+        direction=direction.value,
+        ok=True,
+        latency_ms=elapsed,
+        chars=len(text),
+    )
     reply = format_phrase(text, result)
     tts_text = result.text if direction is Direction.RU_UK else text
     markup = None
@@ -175,21 +189,35 @@ async def _translate_and_reply(
     attempts = [direction]
     if guessed:
         attempts.append(Direction.UK_RU if direction is Direction.RU_UK else Direction.RU_UK)
-    reply = tts_text = None
+    reply = tts_text = source = None
     async with svc.concurrency():
         for attempt in attempts:
             try:
                 if is_word:
                     lookup = await svc.translation.translate_word(text, attempt, user_id(update))
                     reply, tts_text = format_word(lookup), lookup.uk_word
+                    source = lookup.result.source.value if lookup.result else None
                 else:
                     result = await svc.translation.translate_phrase(text, attempt, user_id(update))
                     reply = format_phrase(text, result)
                     tts_text = result.text if attempt is Direction.RU_UK else text
+                    source = result.source.value
             except TranslationUnavailable:
                 continue
             direction = attempt
             break
+    elapsed = int((time.monotonic() - started) * 1000)
+    track(
+        update,
+        context,
+        "translate",
+        detail="word" if is_word else "phrase",
+        source=source,
+        direction=direction.value,
+        ok=reply is not None,
+        latency_ms=elapsed,
+        chars=len(text),
+    )
     if reply is None:
         svc.metrics.incr("provider_error.all")
         await reply_html(
@@ -278,7 +306,10 @@ async def on_tts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             audio = await svc.tts.synthesize(text)
     except TtsError:
         svc.metrics.incr("provider_error.tts")
+        track(update, context, "tts", ok=False)
         await query.message.reply_text("⚠️ Не вдалося озвучити. Спробуйте пізніше.")
         return
     await query.message.reply_voice(voice=audio, caption=f"🔊 {text[:100]}")
-    svc.metrics.incr("tts.requests", int((time.monotonic() - started) * 1000))
+    elapsed = int((time.monotonic() - started) * 1000)
+    svc.metrics.incr("tts.requests", elapsed)
+    track(update, context, "tts", ok=True, latency_ms=elapsed, chars=len(text))

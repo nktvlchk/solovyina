@@ -37,6 +37,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("say", modes.cmd_say))
     app.add_handler(CommandHandler("mistakes", modes.cmd_mistakes))
     app.add_handler(CommandHandler("stats", admin.cmd_stats))
+    app.add_handler(CommandHandler("export_stats", admin.cmd_export_stats))
 
     app.add_handler(CallbackQueryHandler(common.on_delete_callback, pattern=r"^del:"))
     app.add_handler(CallbackQueryHandler(translation.on_direction_callback, pattern=r"^dir[01]:"))

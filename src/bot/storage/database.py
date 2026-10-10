@@ -56,6 +56,23 @@ CREATE TABLE IF NOT EXISTS correction_feedback (
     PRIMARY KEY (correction_id, user_id)
 );
 
+-- Product analytics: one row per user action. Pseudonymous user key
+-- (salted hash, not the Telegram ID), no message text, allow-listed fields.
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL DEFAULT (datetime('now')),
+    user_key TEXT NOT NULL,
+    event TEXT NOT NULL,
+    source TEXT,
+    direction TEXT,
+    ok INTEGER,
+    latency_ms INTEGER,
+    chars INTEGER,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_key);
+
 -- Aggregated counters only. Never per-user, never message text.
 CREATE TABLE IF NOT EXISTS metrics_daily (
     day TEXT NOT NULL,

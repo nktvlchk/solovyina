@@ -6,7 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import reply_html, services, user_id
+from bot.handlers.util import reply_html, services, track, user_id
 from bot.models.correction import CheckResult, Correction, Severity, Verdict
 from bot.services.correction import CheckUnavailable
 
@@ -109,9 +109,27 @@ async def run_check(update: Update, context: ContextTypes.DEFAULT_TYPE, text: st
         async with svc.concurrency():
             result = await svc.correction.check(user_id(update), text)
     except CheckUnavailable as exc:
+        track(
+            update,
+            context,
+            "check",
+            ok=False,
+            chars=len(text),
+            detail="budget" if exc.reason == "budget" else "unavailable",
+        )
         await status.edit_text(UNAVAILABLE_MESSAGES.get(exc.reason, UNAVAILABLE_MESSAGES["provider"]))
         return
-    svc.metrics.incr("requests.check", int((time.monotonic() - started) * 1000))
+    elapsed = int((time.monotonic() - started) * 1000)
+    svc.metrics.incr("requests.check", elapsed)
+    track(
+        update,
+        context,
+        "check",
+        ok=True,
+        latency_ms=elapsed,
+        chars=len(text),
+        detail="has_errors" if result.corrections else "no_errors",
+    )
     await status.delete()
 
     markup = None

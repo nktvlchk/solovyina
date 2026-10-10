@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -39,3 +41,14 @@ async def reply_html(message: Message, text: str, reply_markup=None) -> Message:
             disable_web_page_preview=True,
         )
     return sent
+
+
+def track(update: Update, context: ContextTypes.DEFAULT_TYPE, event: str, **props) -> None:
+    """Record one product-analytics event. Never breaks the user flow."""
+    svc = services(context)
+    if svc.analytics is None or not has_real_user(update):
+        return
+    try:
+        svc.analytics.track(user_id(update), event, **props)
+    except Exception as exc:  # analytics must never break the bot
+        logging.getLogger(__name__).warning("analytics failed: %s", type(exc).__name__)

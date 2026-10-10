@@ -17,7 +17,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import reply_html, services, user_id
+from bot.handlers.util import reply_html, services, track, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS
 from bot.services.translation import TranslationUnavailable
@@ -83,7 +83,9 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
             update.effective_message, "😔 Зараз не вдалося підібрати варіант. Спробуйте пізніше."
         )
         return
-    svc.metrics.incr("requests.say", int((time.monotonic() - started) * 1000))
+    elapsed = int((time.monotonic() - started) * 1000)
+    svc.metrics.incr("requests.say", elapsed)
+    track(update, context, "say", source=result.source.value, ok=True, latency_ms=elapsed, chars=len(text))
     source = esc(SOURCE_LABELS[result.source])
     reply = f"<b>{esc_line(text)}</b>\n\n🇺🇦 {esc(result.text)}\n\n<i>Джерело: {source}</i>"
     markup = None
@@ -105,12 +107,14 @@ async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: 
     detection = detect_language(text, svc.dictionary.has_uk, svc.dictionary.has_ru)
     # A learner usually asks about a Ukrainian word; Russian words get the Ukrainian equivalent.
     direction = Direction.RU_UK if detection.lang is Lang.RU else Direction.UK_RU
+    track(update, context, "explain", chars=len(text))
     await _translate_and_reply(update, context, text, direction, detected=True)
 
 
 async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     svc = services(context)
     items = svc.corrections.confirmed_for_user(user_id(update), limit=10)
+    track(update, context, "mistakes")
     if not items:
         await reply_html(
             update.effective_message,

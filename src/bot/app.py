@@ -21,6 +21,7 @@ from bot.services.translation import TranslationService
 from bot.services.tts import TtsService
 from bot.storage.database import Database
 from bot.storage.repositories import (
+    AnalyticsRepository,
     CorrectionsRepository,
     MetricsRepository,
     PrivacyRepository,
@@ -67,6 +68,7 @@ class Services:
     privacy: PrivacyRepository
     rate_limiter: RateLimiter
     concurrency: ConcurrencyLimiter
+    analytics: AnalyticsRepository | None = None
     text_cache: TextCache = field(default_factory=TextCache)
     http_client: object = None
 
@@ -116,6 +118,7 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None,
         rate_limiter=RateLimiter(settings.user_rate_limit_per_minute),
         concurrency=ConcurrencyLimiter(settings.max_concurrent_requests),
         http_client=client,
+        analytics=AnalyticsRepository(db),
     )
 
 
@@ -123,6 +126,7 @@ async def _retention_loop(services: Services) -> None:
     while True:
         try:
             removed = services.privacy.purge_older_than(services.settings.retention_days)
+            services.analytics.purge_older_than(services.settings.retention_days)
             if removed:
                 logger.info("retention: removed %d old corrections", removed)
         except Exception as exc:  # never crash the bot because of cleanup

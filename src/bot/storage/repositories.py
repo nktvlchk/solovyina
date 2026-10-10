@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import secrets
 from dataclasses import dataclass
 
 from bot.language import Direction
@@ -231,3 +233,155 @@ class PrivacyRepository:
         )
         after = self.db.query("SELECT COUNT(*) AS n FROM corrections")[0]["n"]
         return before - after
+
+
+class AnalyticsRepository:
+    """Per-action product analytics without personal data.
+
+    * user_key: salted SHA-256 of the Telegram ID (the salt lives only in this
+      database), so behaviour can be followed over time (retention, funnels)
+      without storing who the user is;
+    * events and their fields are allow-listed; message text is never stored.
+    """
+
+    EVENTS = frozenset(
+        {
+            "start",
+            "help",
+            "translate",
+            "say",
+            "explain",
+            "check",
+            "feedback",
+            "tts",
+            "mistakes",
+            "direction",
+            "delete_data",
+            "rate_limited",
+        }
+    )
+    DETAILS = frozenset(
+        {
+            "auto",
+            "word",
+            "phrase",
+            "dictionary",
+            "error",
+            "not_error",
+            "style",
+            "changed",
+            "no_errors",
+            "has_errors",
+            "unavailable",
+            "budget",
+            "button",
+            "command",
+        }
+    )
+
+    def __init__(self, db: Database):
+        self.db = db
+        rows = db.query("SELECT value FROM meta WHERE key = 'analytics_salt'")
+        if rows:
+            self._salt = rows[0]["value"]
+        else:
+            self._salt = secrets.token_hex(16)
+            db.execute("INSERT INTO meta(key, value) VALUES ('analytics_salt', ?)", (self._salt,))
+
+    def user_key(self, user_id: int) -> str:
+        return hashlib.sha256(f"{self._salt}:{user_id}".encode()).hexdigest()[:16]
+
+    def track(
+        self,
+        user_id: int,
+        event: str,
+        *,
+        source: str | None = None,
+        direction: str | None = None,
+        ok: bool | None = None,
+        latency_ms: int | None = None,
+        chars: int | None = None,
+        detail: str | None = None,
+    ) -> None:
+        if event not in self.EVENTS:
+            raise ValueError(f"event not allowed: {event}")
+        if detail is not None and detail not in self.DETAILS:
+            raise ValueError(f"detail not allowed: {detail}")
+        self.db.execute(
+            "INSERT INTO events(user_key, event, source, direction, ok, latency_ms, chars, detail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                self.user_key(user_id),
+                event,
+                source,
+                direction,
+                None if ok is None else int(ok),
+                latency_ms,
+                chars,
+                detail,
+            ),
+        )
+
+    def delete_user(self, user_id: int) -> int:
+        key = self.user_key(user_id)
+        n = self.db.query("SELECT COUNT(*) AS n FROM events WHERE user_key = ?", (key,))[0]["n"]
+        self.db.execute("DELETE FROM events WHERE user_key = ?", (key,))
+        return n
+
+    def purge_older_than(self, days: int) -> None:
+        self.db.execute("DELETE FROM events WHERE ts < datetime('now', ?)", (f"-{int(days)} days",))
+
+    # ------------------------------------------------------------- reports
+    def report(self, days: int = 7) -> dict:
+        since = f"-{int(days)} days"
+        q = self.db.query
+        users = q("SELECT COUNT(DISTINCT user_key) AS n FROM events WHERE ts >= datetime('now', ?)", (since,))
+        new_users = q(
+            "SELECT COUNT(*) AS n FROM (SELECT user_key, MIN(ts) AS first FROM events GROUP BY user_key) "
+            "WHERE first >= datetime('now', ?)",
+            (since,),
+        )
+        returning = q(
+            "SELECT COUNT(*) AS n FROM (SELECT user_key FROM events WHERE ts >= datetime('now', ?) "
+            "GROUP BY user_key HAVING COUNT(DISTINCT date(ts)) >= 2)",
+            (since,),
+        )
+        daily = q(
+            "SELECT date(ts) AS day, COUNT(DISTINCT user_key) AS users, COUNT(*) AS events FROM events "
+            "WHERE ts >= datetime('now', ?) GROUP BY day ORDER BY day",
+            (since,),
+        )
+        by_event = q(
+            "SELECT event, COALESCE(detail, '') AS detail, COUNT(*) AS n, "
+            "SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed, CAST(AVG(latency_ms) AS INTEGER) AS avg_ms "
+            "FROM events WHERE ts >= datetime('now', ?) GROUP BY event, detail ORDER BY n DESC",
+            (since,),
+        )
+        sources = q(
+            "SELECT source, COUNT(*) AS n FROM events WHERE event = 'translate' AND source IS NOT NULL "
+            "AND ts >= datetime('now', ?) GROUP BY source ORDER BY n DESC",
+            (since,),
+        )
+        feedback = q(
+            "SELECT detail, COUNT(*) AS n FROM events WHERE event = 'feedback' "
+            "AND ts >= datetime('now', ?) GROUP BY detail",
+            (since,),
+        )
+        return {
+            "days": days,
+            "users": users[0]["n"],
+            "new_users": new_users[0]["n"],
+            "returning_users": returning[0]["n"],
+            "daily": [dict(r) for r in daily],
+            "by_event": [dict(r) for r in by_event],
+            "sources": [dict(r) for r in sources],
+            "feedback": {r["detail"]: r["n"] for r in feedback},
+        }
+
+    def export_rows(self, days: int = 30) -> list[dict]:
+        rows = self.db.query(
+            "SELECT ts, user_key, event, detail, source, direction, ok, latency_ms, chars FROM events "
+            "WHERE ts >= datetime('now', ?) ORDER BY ts",
+            (f"-{int(days)} days",),
+        )
+        return [dict(r) for r in rows]

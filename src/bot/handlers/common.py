@@ -5,13 +5,14 @@ from telegram.ext import ContextTypes
 
 from bot import __version__
 from bot.handlers.modes import modes_keyboard
-from bot.handlers.util import reply_html, services, user_id
+from bot.handlers.util import reply_html, services, track, user_id
 
 PROJECT_URL = "https://github.com/nktvlchk/solovyina"
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     svc = services(context)
+    track(update, context, "start")
     text = (
         "👋 <b>Солов'їна</b> — помічник для переходу на українську\n\n"
         "Надішліть слово чи фразу — перекладу між українською та російською "
@@ -74,7 +75,9 @@ async def cmd_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "• для /check — лише виправлені фрагменти (було / стало / пояснення) "
         "і ваша оцінка кнопками;\n"
         f"• повний текст повідомлення: {raw};\n"
-        "• агреговані лічильники без прив'язки до людей.\n\n"
+        "• журнал дій для покращення бота: яка функція, джерело, час відповіді, оцінки — "
+        "під псевдонімом, без вашого Telegram ID і без текстів повідомлень;\n"
+        "• агреговані лічильники.\n\n"
         "<b>Що НЕ зберігається:</b> ім'я, username, історія повідомлень.\n\n"
         f"<b>Строк зберігання:</b> {svc.settings.retention_days} днів, потім автоматичне видалення.\n"
         "<b>Видалити все зараз:</b> /delete_my_data"
@@ -122,6 +125,8 @@ async def on_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     svc = services(context)
     counts = svc.privacy.delete_user(user_id(update))
+    if svc.analytics is not None:
+        counts["events"] = svc.analytics.delete_user(user_id(update))
     context.user_data.clear()
     total = sum(counts.values())
     await query.edit_message_text(
