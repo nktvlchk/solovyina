@@ -7,10 +7,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
-from bot.handlers.util import has_real_user, reply_html, services, track, user_id
+from bot.handlers.util import has_real_user, is_private, reply_html, services, track, user_id
 from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS, Source, TranslationResult
-from bot.services.translation import TranslationUnavailable, WordLookup
+from bot.services.translation import TranslationUnavailable, WordLookup, fix_case
 from bot.services.tts import TtsError
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,7 @@ async def cmd_translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    text = fix_case(text)
     if not await guard(update, context, text):
         return
     svc = services(context)
@@ -258,7 +259,7 @@ async def _translate_and_reply(
         "requests.word" if is_word else "requests.phrase",
         int((time.monotonic() - started) * 1000),
     )
-    if detected:
+    if detected and is_private(update):
         label = esc(DIRECTION_LABELS[direction])
         reply += f"\n\n<i>{label}. Закріпити інший напрям: /direction</i>"
     markup = None

@@ -18,8 +18,8 @@ from bot.handlers import admin, common, correction, feedback, modes, translation
 logger = logging.getLogger(__name__)
 
 # Private chats get everything. In groups (e.g. a class chat where the same
-# bot posts study cards) the bot stays silent unless asked: only /tr, /check
-# and /say work; ordinary messages are never translated or processed.
+# bot posts study cards) the bot stays silent unless asked: only /tr, /check,
+# /say and the admin-only /del work; ordinary messages are never translated or processed.
 PRIVATE = filters.ChatType.PRIVATE
 ANY_CHAT = filters.ChatType.PRIVATE | filters.ChatType.GROUPS
 
@@ -41,6 +41,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("direction", translation.cmd_direction, filters=PRIVATE))
     app.add_handler(CommandHandler("check", correction.cmd_check, filters=ANY_CHAT))
     app.add_handler(CommandHandler("say", modes.cmd_say, filters=ANY_CHAT))
+    app.add_handler(CommandHandler("del", admin.cmd_delete_bot_message, filters=ANY_CHAT))
     app.add_handler(CommandHandler(["tr", "translate"], translation.cmd_translate, filters=ANY_CHAT))
     app.add_handler(CommandHandler("mistakes", modes.cmd_mistakes, filters=PRIVATE))
     app.add_handler(CommandHandler("stats", admin.cmd_stats, filters=PRIVATE))

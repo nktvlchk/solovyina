@@ -3,10 +3,12 @@ names or message texts are shown or exported."""
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 
 from telegram import InputFile, Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc
@@ -106,3 +108,26 @@ async def cmd_export_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         document=InputFile(data, filename="solovyina-events-30d.csv"),
         caption=f"Подій: {len(rows)}. Ключ користувача — псевдонім, без Telegram ID і текстів.",
     )
+
+
+async def cmd_delete_bot_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/del as a reply to one of the bot's messages: the bot deletes it.
+    Admins only (ADMIN_IDS); works in groups without admin rights for the bot,
+    because a bot may always delete its own messages (Telegram: within 48 h)."""
+    message = update.effective_message
+    if message is None or not is_admin(context, user_id(update)):
+        return  # stay silent for everyone else
+    target = message.reply_to_message
+    if target is None or target.from_user is None or target.from_user.id != context.bot.id:
+        with contextlib.suppress(TelegramError):
+            await message.reply_text("Відповідайте командою /del на повідомлення бота.")
+        return
+    try:
+        await target.delete()
+    except TelegramError:
+        with contextlib.suppress(TelegramError):
+            await message.reply_text("Не вдалося видалити: Telegram дозволяє це лише протягом 48 годин.")
+        return
+    # Deleting the command itself needs admin rights in a group; skip if not allowed.
+    with contextlib.suppress(TelegramError):
+        await message.delete()

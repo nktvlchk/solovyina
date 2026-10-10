@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -67,10 +68,35 @@ def looks_like_target(text: str, target: Lang) -> bool:
     return True
 
 
+# A lowercase letter followed by an uppercase one inside a word ("вИсновки").
+_ODD_CASE = re.compile(r"(?<=[^\W\d_])(?<![A-ZА-ЯЁІЇЄҐ])[A-ZА-ЯЁІЇЄҐ]")
+_WORD = re.compile(r"[^\W\d_]+")
+
+
+def _has_odd_case(word: str) -> bool:
+    return bool(_ODD_CASE.search(word)) and not word.isupper()
+
+
+def fix_case(text: str) -> str:
+    """Lowercase words with a stray capital inside ("вИсновки" -> "висновки").
+    Such typos confuse language detection and translation memories. Normal
+    capitals (first letter, ALL CAPS) are kept."""
+    return _WORD.sub(lambda m: m.group(0).lower() if _has_odd_case(m.group(0)) else m.group(0), text)
+
+
+def _garbled(out: str, text: str) -> bool:
+    """Answer has odd casing that the input did not have, e.g. MyMemory
+    returning "сВисновки": a sign of a broken translation-memory match."""
+    return any(_has_odd_case(w) for w in _WORD.findall(out)) and not any(
+        _has_odd_case(w) for w in _WORD.findall(text)
+    )
+
+
 def _plausible(out: str, text: str, direction: Direction) -> bool:
     return (
         bool(out)
         and not _same(out, text)
+        and not _garbled(out, text)
         and len(out) <= max(300, len(text) * 6)
         and looks_like_target(out, direction.target)
     )
