@@ -1,4 +1,8 @@
+<img src="docs/logo.png" alt="Логотип Солов'їна" width="96" align="right">
+
 # Солов'їна
+
+**Спробувати: [@solovyinamova_bot](https://t.me/solovyinamova_bot)**
 
 Telegram-бот: помічник з української для російськомовних.
 

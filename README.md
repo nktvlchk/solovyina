@@ -1,4 +1,8 @@
+<img src="docs/logo.png" alt="Solovyina logo" width="96" align="right">
+
 # Solovyina (Солов'їна)
+
+**Try it in Telegram: [@solovyinamova_bot](https://t.me/solovyinamova_bot)**
 
 *Ukrainian is often called «солов'їна мова», the nightingale language.*
 

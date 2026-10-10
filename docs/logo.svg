@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F6FD6"/>
+      <stop offset="1" stop-color="#1B4FA8"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#bg)"/>
+  <!-- speech bubble, tail pointing to the beak -->
+  <path d="M392 132 h112 a30 30 0 0 1 30 30 v54 a30 30 0 0 1 -30 30 h-62 l-34 30 l6 -30 h-22 a30 30 0 0 1 -30 -30 v-54 a30 30 0 0 1 30 -30 z" fill="#FFD43B"/>
+  <circle cx="414" cy="189" r="10" fill="#1B4FA8"/>
+  <circle cx="448" cy="189" r="10" fill="#1B4FA8"/>
+  <circle cx="482" cy="189" r="10" fill="#1B4FA8"/>
+  <g transform="translate(-10 20)">
+    <!-- tail -->
+    <path d="M200 400 L120 470 Q150 452 160 456 Q138 488 136 506 L222 430 Z" fill="#F2B705"/>
+    <!-- body -->
+    <ellipse cx="290" cy="380" rx="112" ry="88" fill="#FFD43B"/>
+    <!-- head -->
+    <circle cx="376" cy="306" r="58" fill="#FFD43B"/>
+    <!-- open beak, singing -->
+    <path d="M426 290 L478 276 L430 306 Z" fill="#FFD43B"/>
+    <path d="M428 312 L474 320 L426 324 Z" fill="#FFD43B"/>
+    <!-- wing -->
+    <path d="M214 374 Q284 312 352 366 Q292 428 214 374 Z" fill="#F2B705"/>
+    <!-- eye -->
+    <circle cx="392" cy="294" r="11" fill="#1B4FA8"/>
+    <circle cx="396" cy="290" r="3.5" fill="#FFFFFF"/>
+    <!-- legs -->
+    <g stroke="#FFD43B" stroke-width="10" stroke-linecap="round">
+      <line x1="270" y1="462" x2="264" y2="504"/>
+      <line x1="310" y1="462" x2="316" y2="504"/>
+    </g>
+  </g>
+</svg>
