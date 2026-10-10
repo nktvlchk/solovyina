@@ -1,4 +1,6 @@
-# Ukrainian helper bot
+# Solovyina (Солов'їна)
+
+*Ukrainian is often called «солов'їна мова», the nightingale language.*
 
 **English** · [Українська](README.uk.md)
 

@@ -2,7 +2,7 @@
   <title>Illustrative mock-up with synthetic text (not a real conversation)</title>
   <rect width="420" height="560" fill="#dfe7ee"/>
   <rect width="420" height="48" fill="#517da2"/>
-  <text x="16" y="30" fill="#fff" font-size="16" font-weight="bold">Ukrainian helper (demo)</text>
+  <text x="16" y="30" fill="#fff" font-size="16" font-weight="bold">Солов'їна (demo)</text>
   <g>
     <rect x="190" y="68" width="214" height="40" rx="12" fill="#effdde"/>
     <text x="204" y="93">✍️ Я ходив в магазін.</text>

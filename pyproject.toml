@@ -1,5 +1,5 @@
 [project]
-name = "ukrainian-helper-bot"
+name = "solovyina"
 version = "0.2.0"
 description = "Telegram helper for Russian speakers switching to Ukrainian"
 readme = "README.md"

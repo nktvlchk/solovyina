@@ -15,7 +15,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "ukrainian-helper-bot/0.2 (+https://github.com/nktvlchk/ukrainian-bot)"
+USER_AGENT = "solovyina-bot/0.2 (+https://github.com/nktvlchk/solovyina)"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 

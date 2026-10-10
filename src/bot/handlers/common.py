@@ -7,13 +7,13 @@ from bot import __version__
 from bot.handlers.modes import modes_keyboard
 from bot.handlers.util import reply_html, services, user_id
 
-PROJECT_URL = "https://github.com/nktvlchk/ukrainian-bot"
+PROJECT_URL = "https://github.com/nktvlchk/solovyina"
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     svc = services(context)
     text = (
-        "👋 <b>Помічник для переходу на українську</b>\n\n"
+        "👋 <b>Солов'їна</b> — помічник для переходу на українську\n\n"
         "Надішліть слово чи фразу — перекладу між українською та російською "
         "і покажу, звідки взято відповідь.\n"
         f"📚 Локальний словник: {len(svc.dictionary):,} українських слів.\n\n"
@@ -83,7 +83,7 @@ async def cmd_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def cmd_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        f"ℹ️ <b>Про проєкт</b> (v{__version__})\n\n"
+        f"ℹ️ <b>Солов'їна</b> (v{__version__})\n\n"
         "Telegram-помічник для російськомовних, які переходять на українську: "
         "писати природніше, розуміти свої помилки й запам'ятовувати виправлення.\n\n"
         "<b>Джерела даних:</b>\n"
