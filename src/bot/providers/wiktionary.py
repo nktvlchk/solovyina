@@ -82,7 +82,8 @@ def _definitions(section: str) -> list[str]:
     for line in after.split("\n"):
         line = line.strip()
         if line.startswith("#") and not line.startswith("##"):
-            cleaned = clean_wikitext(line.lstrip("#").strip())
+            body = re.sub(r"\{\{пример\|[^}]*\}\}", "", line.lstrip("#"))
+            cleaned = clean_wikitext(body.strip())
             if len(cleaned) > 1 and cleaned != "-":
                 out.append(cleaned[:300])
     return out

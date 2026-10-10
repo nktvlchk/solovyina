@@ -143,9 +143,7 @@ def send(text: str) -> bool:
     ).encode("utf-8")
     url = API.format(token=TOKEN, method="sendMessage")
     for attempt in range(1, 4):
-        request = urllib.request.Request(
-            url, data=payload, headers={"Content-Type": "application/json"}
-        )
+        request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 json.load(response)
