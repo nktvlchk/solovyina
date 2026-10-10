@@ -83,3 +83,24 @@ async def test_my_mistakes_empty(make_services):
     update = make_update("/mistakes")
     await modes.cmd_mistakes(update, make_context(svc))
     assert "Тут з'являться" in update.effective_message.sent[-1]["text"]
+
+
+async def test_tr_translates_text_after_command(make_services):
+    svc = make_services(mymemory=FakeMyMemory({"как дела": "як справи"}))
+    update = make_update("/tr как дела")
+    await th.cmd_translate(update, make_context(svc))
+    assert "як справи" in update.effective_message.sent[-1]["text"]
+
+
+async def test_tr_translates_replied_message(make_services):
+    svc = make_services(mymemory=FakeMyMemory({"как дела": "як справи"}))
+    update = make_update("/tr", user_id=2)
+    update.effective_message.reply_to_message = make_update("как дела").effective_message
+    await th.cmd_translate(update, make_context(svc))
+    assert "як справи" in update.effective_message.sent[-1]["text"]
+
+
+async def test_tr_without_text_explains_usage(make_services):
+    update = make_update("/tr")
+    await th.cmd_translate(update, make_context(make_services()))
+    assert "/tr" in update.effective_message.sent[-1]["text"]

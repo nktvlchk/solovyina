@@ -55,8 +55,13 @@ did I get wrong".
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
 | Product analytics | `/stats [days]` for `ADMIN_IDS`: active/new/returning users, actions by feature, translation sources, share of "error / not an error / style" ratings, quality per model and prompt version; `/export_stats` sends a CSV of pseudonymous events for 30 days |
 
-Commands: `/start`, `/help`, `/say`, `/check`, `/mistakes`, `/direction`,
+Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/mistakes`, `/direction`,
 `/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
+
+**In group chats** the bot stays silent unless asked: it ignores ordinary
+messages and answers only `/tr` (translate the text after the command, or the
+message you reply to), `/check` and `/say`. The optional `drip.py` worker can
+post study cards into the same group three times a day.
 
 ## Architecture
 

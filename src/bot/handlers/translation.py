@@ -97,20 +97,31 @@ async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -
     return True
 
 
-async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+TRANSLATE_HINT = (
+    "🔁 Напишіть текст одразу після команди: /tr ваш текст\n"
+    "Або відповідайте командою /tr на повідомлення, яке треба перекласти."
+)
+
+
+async def cmd_translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/tr: translate on request. In groups this is the only way to get a
+    translation; the bot never reacts to ordinary group messages."""
+    from bot.handlers.util import command_text
+
     message = update.effective_message
-    if message is None or not message.text:
+    if message is None or not has_real_user(update):
         return
-    text = message.text.strip()
-    if not text or not has_real_user(update):
+    text = command_text(update)
+    reply_to = message.reply_to_message
+    if not text and reply_to is not None:
+        text = (reply_to.text or reply_to.caption or "").strip()
+    if not text:
+        await message.reply_text(TRANSLATE_HINT)
         return
+    await translate_text(update, context, text)
 
-    # Mode buttons and one-shot modes (/check, /say, Поясни слово)
-    from bot.handlers.modes import dispatch
 
-    if await dispatch(update, context, text):
-        return
-
+async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     if not await guard(update, context, text):
         return
     svc = services(context)
@@ -129,6 +140,22 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         direction = context.user_data.get(LAST_DIRECTION_KEY, Direction.RU_UK)
         guessed = True
     await _translate_and_reply(update, context, text, direction, detected, guessed=guessed)
+
+
+async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None or not message.text:
+        return
+    text = message.text.strip()
+    if not text or not has_real_user(update):
+        return
+
+    # Mode buttons and one-shot modes (/check, /say, Поясни слово)
+    from bot.handlers.modes import dispatch
+
+    if await dispatch(update, context, text):
+        return
+    await translate_text(update, context, text)
 
 
 def _exact_dictionary_word(svc, text: str, direction: Direction) -> bool:

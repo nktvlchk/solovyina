@@ -36,7 +36,7 @@ def test_redirect_ignores_group_chats():
     assert "PRIVATE" in repr(handler.filters).upper()
 
 
-def test_main_bot_in_groups_only_check_and_say():
+def test_main_bot_in_groups_only_explicit_commands():
     from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler
 
     from bot.handlers import register_handlers
@@ -47,7 +47,7 @@ def test_main_bot_in_groups_only_check_and_say():
         if isinstance(handler, CommandHandler):
             text = repr(handler.filters).upper()
             assert "PRIVATE" in text, handler
-            assert ("GROUP" in text) == bool(handler.commands & {"check", "say"}), handler.commands
+            assert ("GROUP" in text) == bool(handler.commands & {"check", "say", "tr"}), handler.commands
         elif isinstance(handler, MessageHandler):
             text = repr(handler.filters).upper()
             assert "PRIVATE" in text and "GROUP" not in text
