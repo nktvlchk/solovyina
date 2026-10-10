@@ -152,7 +152,9 @@ def build_application(settings: Settings, services: Services | None = None) -> A
 COMMANDS = [
     ("start", "Почати"),
     ("help", "Як користуватися"),
+    ("say", "Як сказати? Природний український варіант"),
     ("check", "Перевір мене: перевірка тексту"),
+    ("mistakes", "Мої помилки"),
     ("direction", "Напрям перекладу"),
     ("privacy", "Які дані обробляються"),
     ("delete_my_data", "Видалити мої дані"),

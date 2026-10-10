@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers import admin, common, correction, feedback, translation
+from bot.handlers import admin, common, correction, feedback, modes, translation
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("delete_my_data", common.cmd_delete_my_data))
     app.add_handler(CommandHandler("direction", translation.cmd_direction))
     app.add_handler(CommandHandler("check", correction.cmd_check))
+    app.add_handler(CommandHandler("say", modes.cmd_say))
+    app.add_handler(CommandHandler("mistakes", modes.cmd_mistakes))
     app.add_handler(CommandHandler("stats", admin.cmd_stats))
 
     app.add_handler(CallbackQueryHandler(common.on_delete_callback, pattern=r"^del:"))

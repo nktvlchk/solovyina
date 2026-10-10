@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="560" viewBox="0 0 420 560" font-family="Helvetica, Arial, sans-serif" font-size="14">
+  <title>Illustrative mock-up with synthetic text (not a real conversation)</title>
+  <rect width="420" height="560" fill="#dfe7ee"/>
+  <rect width="420" height="48" fill="#517da2"/>
+  <text x="16" y="30" fill="#fff" font-size="16" font-weight="bold">Ukrainian helper (demo)</text>
+  <g>
+    <rect x="190" y="68" width="214" height="40" rx="12" fill="#effdde"/>
+    <text x="204" y="93">✍️ Я ходив в магазін.</text>
+  </g>
+  <g>
+    <rect x="16" y="124" width="300" height="96" rx="12" fill="#fff"/>
+    <text x="30" y="148" font-weight="bold">✍️ Виправлений варіант (помилок: 2):</text>
+    <text x="30" y="172">Я ходив у магазин.</text>
+    <text x="30" y="200" fill="#7a8a99" font-size="12" font-style="italic">Перевірка мовною моделлю, вона може помилятися.</text>
+  </g>
+  <g>
+    <rect x="16" y="234" width="340" height="80" rx="12" fill="#fff"/>
+    <text x="30" y="258"><tspan font-weight="bold">1. Помилка</tspan> · орфографія</text>
+    <text x="30" y="282"><tspan text-decoration="line-through">магазін</tspan> → <tspan font-weight="bold">магазин</tspan></text>
+    <text x="30" y="302" font-size="13">После «г» в этом слове пишется «и».</text>
+  </g>
+  <g font-size="13" fill="#2b5278">
+    <rect x="16" y="320" width="168" height="34" rx="8" fill="#f4f7fa"/>
+    <text x="54" y="342">✅ Це помилка</text>
+    <rect x="188" y="320" width="168" height="34" rx="8" fill="#f4f7fa"/>
+    <text x="226" y="342">✍️ Лише стиль</text>
+    <rect x="16" y="358" width="340" height="34" rx="8" fill="#f4f7fa"/>
+    <text x="122" y="380">❌ Тут немає помилки</text>
+  </g>
+  <g>
+    <rect x="16" y="408" width="340" height="80" rx="12" fill="#fff"/>
+    <text x="30" y="432"><tspan font-weight="bold">2. Помилка</tspan> · граматика</text>
+    <text x="30" y="456"><tspan text-decoration="line-through">в</tspan> → <tspan font-weight="bold">у</tspan></text>
+    <text x="30" y="476" font-size="13">Чередование у/в после согласного.</text>
+  </g>
+  <text x="16" y="540" fill="#7a8a99" font-size="11">Synthetic example. No real users or messages.</text>
+</svg>

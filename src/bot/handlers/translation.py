@@ -100,11 +100,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text:
         return
 
-    # Mode set by /check without arguments
-    if context.user_data.pop("await_check", False):
-        from bot.handlers.correction import run_check
+    # Mode buttons and one-shot modes (/check, /say, Поясни слово)
+    from bot.handlers.modes import dispatch
 
-        await run_check(update, context, text)
+    if await dispatch(update, context, text):
         return
 
     if not await guard(update, context, text):

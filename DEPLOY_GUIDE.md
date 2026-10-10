@@ -1,89 +1,77 @@
-# 🚀 Як запустити бота 24/7 (безкоштовно)
+# Deployment guide
 
-Найпростіший спосіб — **Railway.app**. Це хмарний сервіс, де бот працює навіть коли комп'ютер вимкнений.
+This guide uses [Railway](https://railway.com). Any host that can run a
+long-lived Python process works the same way.
 
----
+> **Never put real tokens or keys in this repository** — not in code, not in
+> docs, not in examples. They go only into the hosting provider's variables
+> (or a local `.env`, which is git-ignored).
 
-## Крок 1: Створити акаунт на GitHub
+## Cost
 
-1. Відкрий [github.com](https://github.com)
-2. Натисни **Sign up**
-3. Введи email, пароль, username
-4. Підтвердь email
+Railway is a paid service with usage-based billing; trial and plan terms change.
+Check the current prices before deploying: https://railway.com/pricing.
+This guide intentionally gives no cost estimate.
 
-## Крок 2: Завантажити файли бота на GitHub
+## 1. Create a bot token
 
-1. На GitHub натисни **+** (вгорі справа) → **New repository**
-2. Назва: `ukrainian-bot`
-3. Вибери **Private** (приватний)
-4. Натисни **Create repository**
-5. На сторінці репозиторію натисни **uploading an existing file**
-6. Перетягни ці файли з папки `telegram_bot`:
-   - `bot.py`
-   - `data.py`
-   - `big_dictionary.py`
-   - `requirements.txt`
-   - `Procfile`
-   - `runtime.txt`
-7. ⚠️ **НЕ завантажуй файл `.env`** (там токени!)
-8. Натисни **Commit changes**
+1. Open [@BotFather](https://t.me/BotFather), send `/newbot`.
+2. Copy the token. Do not paste it into chats, issues, screenshots or files in the repo.
 
-## Крок 3: Зареєструватися на Railway
+## 2. Deploy
 
-1. Відкрий [railway.app](https://railway.app)
-2. Натисни **Login** → **Login with GitHub**
-3. Дозволь доступ
+1. Railway → **New Project** → **Deploy from GitHub repo** → select this repository.
+2. Railway installs `requirements.txt` and runs the `worker` process from `Procfile`:
+   `PYTHONPATH=src python -m bot`.
 
-## Крок 4: Створити проєкт
+## 3. Set variables
 
-1. Натисни **New Project**
-2. Вибери **Deploy from GitHub repo**
-3. Знайди та вибери `ukrainian-bot`
-4. Railway почне деплой автоматично
+Service → **Variables**:
 
-## Крок 5: Додати токени (змінні середовища)
+| Variable | Value |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | `your_telegram_bot_token` |
+| `ANTHROPIC_API_KEY` | `your_anthropic_api_key` (optional) |
+| `ADMIN_IDS` | `123456789` (optional, your numeric Telegram ID) |
+| `DATABASE_PATH` | `/data/bot.sqlite3` (if you attach a volume, see below) |
 
-⚠️ **Це найважливіший крок!**
+All other variables have safe defaults (see `.env.example` and README).
 
-1. Натисни на свій сервіс (прямокутник з назвою)
-2. Перейди на вкладку **Variables**
-3. Додай змінні (тільки у Railway, ніколи не в репозиторій):
+### Persistent storage (optional)
 
-| Variable name       | Value                                              |
-|---------------------|----------------------------------------------------|
-| `TELEGRAM_BOT_TOKEN`| `your_telegram_bot_token` |
-| `ANTHROPIC_API_KEY` | `your_anthropic_api_key` (необов'язково) |
-| `ADMIN_IDS` | `123456789` (необов'язково) |
+Without a volume, the SQLite file is lost on every redeploy (settings,
+feedback, daily model limit). To keep it, attach a Railway **Volume** mounted
+at `/data` and set `DATABASE_PATH=/data/bot.sqlite3`.
 
-4. Натисни **Add** для кожної змінної
+Runtime files (`*.sqlite3`, `*.db`, `stats.json`, `favorites.json`, logs) must
+never be committed; `.gitignore` and CI block them.
 
-## Крок 6: Перевірити що працює
+## 4. Check it works
 
-1. Перейди на вкладку **Deployments**
-2. Повинен бути статус **Active** або **Success** ✅
-3. Відкрий Telegram → знайди свого бота → напиши `/start`
-4. Бот повинен відповісти! 🎉
+1. **Deployments** shows *Active*.
+2. In Telegram send `/start` to the bot.
+3. **Logs**: you should see `dictionary: … headwords; model features: on/off`.
 
----
+Logs contain technical events only (provider name, HTTP status, error class,
+timings). They never contain message texts, and anything that looks like a
+bot token or API key is replaced with `[REDACTED]`. Do not set
+`LOG_LEVEL=DEBUG` in production.
 
-## ❓ Якщо щось не працює
+## 5. If a token or key leaks
 
-### Бот не запускається
-- Перевір вкладку **Logs** у Railway — там буде помилка
-- Перевір що всі файли завантажені
-- Перевір що змінні (Variables) правильні
+1. **Telegram:** @BotFather → `/revoke` → choose the bot. The old token stops
+   working immediately. Then `/token` to get a new one.
+2. Put the new value into Railway **Variables** (`TELEGRAM_BOT_TOKEN`) and
+   redeploy. If you also run `drip.py` as a separate service, update it there too.
+3. **Anthropic:** console.anthropic.com → API keys → delete the key, create a
+   new one, update `ANTHROPIC_API_KEY`.
+4. Removing the value from the files is not enough: it stays in git history.
+   Rotate first, then clean history if needed (see the pull request notes).
 
-### Помилка "worker not found"
-- Перевір що файл `Procfile` завантажений (без розширення!)
+## Optional: spaced-repetition poster (`drip.py`)
 
-### Безкоштовний план
-- Railway дає **$5 кредиту** щомісяця — для бота цього достатньо
-- Бот використовує ~$0.5-1/місяць
-- Після закінчення кредиту можна поповнити або переїхати на Render.com
-
----
-
-## 🔄 Як оновити бота
-
-1. Внесіть зміни у файли на GitHub (натисніть на файл → 🖊️ Edit)
-2. Railway автоматично оновить бота!
+A separate, stdlib-only process that posts cards from `deck.json` to a group
+chat three times a day. Run it as a second Railway service with start command
+`python drip.py` and variables `TELEGRAM_BOT_TOKEN`, `DRIP_CHAT_ID` (and
+optionally `DRIP_START`, `DRIP_SLOTS`, `DRIP_TZ`). The chat ID is configuration,
+not code: never hard-code it.

@@ -1,84 +1,191 @@
-# 🇺🇦 Украинский Словарь — Telegram бот
+# Ukrainian helper bot
 
-Телеграм-бот для перевода слов между украинским и русским языком с озвучкой и ударениями.
+**English** · [Українська](README.uk.md)
 
-## Возможности
+A Telegram assistant for Russian speakers who are switching to Ukrainian and
+want to write more naturally, understand their mistakes and remember the
+corrections.
 
-- 📖 **Словарь** — отправьте любое слово, бот переведёт (укр↔рус) и покажет транскрипцию
-- 🔊 **Озвучка** — кнопка для прослушивания произношения (gTTS)
-- 📝 **Ударения** — через Wiktionary для украинских слов
-- 📊 **Статистика** — `/stats` покажет топ запросов и время работы бота
-- 🤖 **AI-перевод** — Google Translate + MyMemory как запасной вариант
-- 📚 **Словарь** — ~10 800 украинских слов (Apertium rus-ukr + ручные статьи, см. ниже)
+It is a learning aid. It does **not** replace a professional translator or a
+teacher, and its model-based checks can be wrong.
 
-## Как пользоваться
+<img src="docs/demo.svg" alt="Illustrative mock-up of a text check with feedback buttons (synthetic text)" width="360">
 
-Просто отправьте слово боту — на украинском или русском.  
-Бот переведёт, покажет определение и предложит озвучку.
+*The screenshot is a mock-up with synthetic text, not a real conversation.*
 
-## Команды
+## The problem
 
-| Команда | Описание |
-|---------|----------|
-| `/start` | Приветствие и инструкция |
-| `/help` | Помощь |
-| `/stats` | Статистика использования бота |
+Many people who grew up with Russian now want to use Ukrainian every day. The
+hard part is not vocabulary but the small things: calques from Russian, case
+government, the `у/в` alternation, stress. Generic translators answer
+"what does it mean", not "how would a native speaker say it" or "what exactly
+did I get wrong".
 
-## Установка
+## Demo scenario
 
-### 1. Создайте бота в Telegram
+1. `/start` shows four modes on the keyboard.
+2. **💬 Як сказати?** → `мне нужно отпроситься с работы` → a natural Ukrainian
+   phrasing, with the source of the answer and a 🔊 button.
+3. **✍️ Перевір мене** → `Я ходив в магазін.` → the corrected text and up to
+   three explanations. Every correction has its own buttons:
+   `✅ Це помилка` · `❌ Тут немає помилки` · `✍️ Лише стиль`.
+4. **🗂 Мої помилки** → the corrections you confirmed.
+5. Any other message is translated (uk ⇄ ru). Every reply names the source
+   it actually came from.
 
-Откройте [@BotFather](https://t.me/BotFather), отправьте `/newbot`, скопируйте токен.
+## Features (what the code really does)
 
-### 2. Настройте переменные окружения
+| Feature | How |
+|---|---|
+| Word translation uk ⇄ ru | local dictionary (~10 800 headwords) → Wiktionary → MyMemory → model (last resort) |
+| Phrase translation | MyMemory → model (if configured) → clear error |
+| "Як сказати?" (natural phrasing) | model → MyMemory fallback |
+| "Перевір мене" (`/check`) | model returns validated JSON: max 3 corrections, error vs style, "no errors" allowed |
+| Feedback per correction | stored with model name and prompt version, re-voting allowed, no duplicates |
+| "Мої помилки" (`/mistakes`) | corrections you confirmed as errors |
+| "Поясни слово" | dictionary entry, part of speech, Wiktionary definitions, stress/IPA, example |
+| Audio | gTTS, **only on button press**; this is speech synthesis, not pronunciation assessment |
+| Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
+| Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
+| Admin stats | `/stats` for `ADMIN_IDS` only, aggregated counters |
+
+Commands: `/start`, `/help`, `/say`, `/check`, `/mistakes`, `/direction`,
+`/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
+
+## Architecture
 
 ```
-TELEGRAM_BOT_TOKEN=ваш_токен_бота
+src/bot/
+  main.py, app.py, config.py      entry point, wiring, env validation
+  handlers/                       Telegram only: common, translation, modes,
+                                  correction, feedback, admin
+  services/                       business logic: dictionary, translation chain,
+                                  correction, tts, limits
+  providers/                      external APIs: wiktionary, mymemory, anthropic
+                                  (shared HTTP helper with timeouts/retries)
+  storage/                        SQLite + repositories
+  models/                         TranslationResult, Correction, parsing
+  language.py, formatting.py      detection, HTML escaping, message splitting
+data/                             dictionary + sources (see data/README.md)
+scripts/                          build_dictionary.py, check_secrets.py
+tests/                            pytest, no network
+drip.py + deck.json               optional spaced-repetition poster for a group chat
 ```
 
-### 3. Установите зависимости и запустите
+Every translation returns `TranslationResult(text, source, confidence, metadata)`
+where `source` is the provider that actually produced the answer.
+
+## Translation order
+
+**Single word:** 1) local dictionary (exact match) → 2) Wiktionary → 3) local
+dictionary, inflected form (shown as "approximate match") → 4) MyMemory →
+5) model, last resort.
+
+**Phrase:** 1) MyMemory → 2) model → 3) a clear "services unavailable" message.
+
+**Як сказати?:** 1) model → 2) MyMemory.
+
+Providers are called one after another, never in parallel "just in case".
+If a provider returns the input unchanged, it is not treated as a translation.
+
+## Run locally
+
+Requires Python 3.11+.
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env          # put your own token in .env
 PYTHONPATH=src python -m bot
 ```
 
-## Структура файлов
+## Environment variables
 
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | **yes** | — | from @BotFather |
+| `ANTHROPIC_API_KEY` | no | — | enables `/check`, "Як сказати?", model fallback |
+| `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | model name (stored with each correction) |
+| `LLM_DAILY_LIMIT` | no | `200` | max paid model calls per day (all users) |
+| `ADMIN_IDS` | no | — | comma-separated Telegram IDs allowed to use `/stats` |
+| `DATABASE_PATH` | no | `data/runtime/bot.sqlite3` | SQLite file (git-ignored) |
+| `STORE_RAW_TEXT` | no | `false` | store the full checked text (off by default) |
+| `RETENTION_DAYS` | no | `180` | stored corrections are deleted after this |
+| `MAX_INPUT_LENGTH` | no | `1000` | max characters per message |
+| `MAX_TTS_LENGTH` | no | `300` | max characters for audio |
+| `USER_RATE_LIMIT_PER_MINUTE` | no | `20` | per-user request limit |
+| `MAX_CONCURRENT_REQUESTS` | no | `8` | concurrent external requests |
+| `LOG_LEVEL` | no | `INFO` | logging level |
+
+The bot exits with a clear message if `TELEGRAM_BOT_TOKEN` is missing; it never
+prints the value.
+
+## Deployment
+
+See [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md). Secrets live only in the hosting
+provider's variables, never in the repository.
+
+## Privacy
+
+* Processed: the text you send and your numeric Telegram ID.
+* Sent to third parties: Wiktionary (single words), MyMemory (translation),
+  Anthropic (checks/phrasing, if enabled), Google TTS (only when 🔊 is pressed).
+* Stored: chosen direction; for checks only the corrected fragments, the
+  explanation, model name, prompt version and your rating; aggregated counters.
+* Not stored: names, usernames, message history, full texts (unless
+  `STORE_RAW_TEXT=true`).
+* Logs contain no message text; tokens are redacted.
+* `/delete_my_data` removes everything linked to your ID; old records are
+  purged after `RETENTION_DAYS`.
+
+## Limitations
+
+* Language detection is heuristic; Ukrainian and Russian share most letters.
+* The local dictionary has no inflection tables; inflected forms are matched
+  approximately and labeled as such.
+* MyMemory has an anonymous daily quota; when it is exhausted phrases fall back
+  to the model (if configured) or fail with a clear message.
+* gTTS uses an unofficial Google endpoint and may stop working.
+* Model checks can miss mistakes or flag correct text. Quality has **not been
+  measured yet**; the feedback buttons exist to measure it.
+* Wiktionary coverage of Ukrainian is partial.
+
+## Data sources and licenses
+
+The project is licensed under **GPL-2.0-or-later** ([LICENSE](LICENSE)),
+because the dictionary is built from GPL-2.0 data.
+
+* **Apertium rus-ukr** — https://github.com/apertium/apertium-rus-ukr, GPL-2.0;
+  bundled unmodified in `data/sources/apertium/`.
+* **Wiktionary** (ru.wiktionary.org) — fetched at runtime, CC BY-SA 4.0,
+  attributed in every reply that uses it.
+* **Manual dictionary entries** — origin not documented yet; see
+  [data/README.md](data/README.md).
+* External services: [MyMemory](https://mymemory.translated.net/doc/spec.php),
+  [Anthropic](https://www.anthropic.com/legal/commercial-terms),
+  [Telegram Bot API](https://core.telegram.org/bots/api), gTTS.
+
+Details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Testing
+
+```bash
+ruff check . && ruff format --check .
+python scripts/build_dictionary.py --check   # dictionary is reproducible
+pytest                                       # no network, no real keys
+pip-audit -r requirements.txt
+python scripts/check_secrets.py
 ```
-├── bot.py              # Главный файл бота
-├── data/               # Словарь и его источники (см. data/README.md)
-├── scripts/            # build_dictionary.py
-├── wiktionary.py       # Модуль ударений
-├── requirements.txt    # Зависимости Python
-├── Procfile            # Для Railway
-└── runtime.txt         # Версия Python
-```
 
-## Деплой
+CI runs all of the above on every pull request
+([.github/workflows/ci.yml](.github/workflows/ci.yml)), plus gitleaks.
 
-Подключите репозиторий к [Railway.app](https://railway.app) — деплой происходит автоматически при каждом push в ветку `main`.
+## Roadmap
 
-Нужна переменная окружения: `TELEGRAM_BOT_TOKEN`
+1. **Повторити** — short practice on your own confirmed mistakes (spaced repetition).
+2. Measure check quality: share of confirmed errors and false corrections
+   per model / prompt version (data is already collected).
+3. Word forms in "Поясни слово" (declension/conjugation from an open source).
+4. Save words to a personal list (storage table already exists).
 
-## Как работает перевод
-
-При запросе слова бот последовательно проверяет:
-
-1. Встроенный словарь (`DICTIONARY` + `BIG_DICT` + Apertium)
-2. Google Translate
-3. Украинский словарь (обратный поиск)
-4. Wiktionary
-5. Перевод через `auto` (язык определяется автоматически)
-
-Благодаря многоуровневому фоллбэку бот переводит даже слова, которые Google возвращает без изменений.
-
-## Источники данных и лицензии
-
-Проект распространяется под **GPL-2.0-or-later** (`LICENSE`), потому что словарь построен на данных Apertium (GPL-2.0).
-
-- **Apertium rus-ukr** — https://github.com/apertium/apertium-rus-ukr, GPL-2.0, файл без изменений в `data/sources/apertium/`.
-- **Wiktionary** (ru.wiktionary.org) — запрашивается во время работы, CC BY-SA 4.0.
-- **Ручной словарь** — происхождение уточняется, см. `data/README.md`.
-
-Подробно: `THIRD_PARTY_NOTICES.md`, `data/README.md`.
+Out of scope for now: a full course, a voice tutor, pronunciation scoring.

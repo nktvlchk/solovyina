@@ -4,6 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot import __version__
+from bot.handlers.modes import modes_keyboard
 from bot.handlers.util import reply_html, services, user_id
 
 PROJECT_URL = "https://github.com/nktvlchk/ukrainian-bot"
@@ -20,11 +21,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if svc.correction.enabled:
         text += "✍️ /check — перевірю ваш український текст і поясню 1–3 головні помилки.\n"
     text += (
+        "💬 «Як сказати?» — природний український варіант російської чи змішаної фрази.\n"
+        "📖 «Поясни слово» — значення, наголос, приклад, озвучка.\n"
+        "🗂 «Мої помилки» — помилки, які ви підтвердили.\n"
         "🧭 /direction — вибрати напрям перекладу.\n"
         "🔒 /privacy — що бот обробляє та зберігає.\n\n"
         "Бот не замінює викладача чи професійного перекладача."
     )
-    await reply_html(update.effective_message, text)
+    await reply_html(update.effective_message, text, reply_markup=modes_keyboard())
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
