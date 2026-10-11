@@ -80,3 +80,23 @@ def test_long_cards_are_split_by_telegram_limit():
     big = [(drip.Card(id=f"R{i}", text="x" * 3000), 0) for i in range(3)]
     messages = drip.render_messages(big)
     assert len(messages) == 3 and all(len(m) <= drip.TELEGRAM_LIMIT for m in messages)
+
+
+def test_id_comment_is_stripped_from_the_sent_text():
+    deck = (
+        "<!-- CARDS_START -->\n---\n<!-- R07 -->\n🧠 Апостроф\n\nпояснення\n"
+        "---\n<!-- V12 -->\n📚 Кольори\n\nсиній\n<!-- CARDS_END -->"
+    )
+    cards = drip.parse_deck(deck)
+    assert [c.id for c in cards] == ["R07", "V12"]
+    assert cards[0].text == "🧠 Апостроф\n\nпояснення"
+    assert "R07" not in cards[0].text and "<!--" not in cards[1].text
+
+
+def test_mixed_and_broken_id_comments():
+    mixed = "<!-- CARDS_START -->\n---\n<!-- R01 -->\n🧠 A\n---\n📚 V01 · B\n<!-- CARDS_END -->"
+    assert [c.id for c in drip.parse_deck(mixed)] == ["R01", "V01"]
+    with pytest.raises(ValueError):
+        drip.parse_deck("<!-- CARDS_START -->\n---\n<!-- R01 -->\n<!-- CARDS_END -->")
+    with pytest.raises(ValueError):
+        drip.parse_deck("<!-- CARDS_START -->\n---\n<!-- R01 -->\n🧠 A\n---\n<!-- R01 -->\n🧠 B\n<!-- CARDS_END -->")
