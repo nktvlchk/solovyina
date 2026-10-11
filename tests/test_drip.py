@@ -99,4 +99,6 @@ def test_mixed_and_broken_id_comments():
     with pytest.raises(ValueError):
         drip.parse_deck("<!-- CARDS_START -->\n---\n<!-- R01 -->\n<!-- CARDS_END -->")
     with pytest.raises(ValueError):
-        drip.parse_deck("<!-- CARDS_START -->\n---\n<!-- R01 -->\n🧠 A\n---\n<!-- R01 -->\n🧠 B\n<!-- CARDS_END -->")
+        drip.parse_deck(
+            "<!-- CARDS_START -->\n---\n<!-- R01 -->\n🧠 A\n---\n<!-- R01 -->\n🧠 B\n<!-- CARDS_END -->"
+        )
