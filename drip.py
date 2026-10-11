@@ -135,7 +135,7 @@ def parse_markdown_deck(text: str) -> list[Card]:
             continue
         comment = _MD_ID_COMMENT.match(chunk)
         if comment:
-            card_id, text = comment.group(1), chunk[comment.end():].strip()
+            card_id, text = comment.group(1), chunk[comment.end() :].strip()
             if not text:
                 raise ValueError(f"card {card_id} has no text after the id comment")
         else:
