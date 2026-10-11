@@ -17,8 +17,13 @@ Deck sources (first one set wins):
 
 Deck formats:
   * Markdown: cards between <!-- CARDS_START --> and <!-- CARDS_END -->,
-    separated by a line with "---"; each card is one ready message whose
-    first line looks like "🧠 R01 · Title" or "📚 V01 · Title".
+    separated by a line with "---". Each card carries an id and is otherwise
+    a ready message. Preferred: the id on its own comment line, which is
+    stripped before sending:
+        <!-- R03 -->
+        🧠 Title
+    Legacy, still accepted: the id inside the visible first line,
+    "🧠 R01 · Title" or "📚 V01 · Title".
   * JSON: {"cards": [{"id", "type", "title", "body", "example"}]}.
 
 Other env vars:
@@ -61,6 +66,8 @@ SEPARATOR = "\n\n➖➖➖\n\n"
 TELEGRAM_LIMIT = 4096
 
 _MD_HEADER = re.compile(r"^\S+\s+([RV]\d+)\s+·", re.UNICODE)
+# Preferred form: the id sits on its own comment line and is never sent to the chat.
+_MD_ID_COMMENT = re.compile(r"^<!--\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*-->[ \t]*\n", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -126,10 +133,17 @@ def parse_markdown_deck(text: str) -> list[Card]:
         chunk = chunk.strip()
         if not chunk:
             continue
-        match = _MD_HEADER.match(chunk)
-        if not match:
-            raise ValueError(f"card without an id header: {chunk[:40]!r}")
-        cards.append(Card(id=match.group(1), text=chunk))
+        comment = _MD_ID_COMMENT.match(chunk)
+        if comment:
+            card_id, text = comment.group(1), chunk[comment.end():].strip()
+            if not text:
+                raise ValueError(f"card {card_id} has no text after the id comment")
+        else:
+            header = _MD_HEADER.match(chunk)  # legacy form: id inside the visible header
+            if not header:
+                raise ValueError(f"card without an id header: {chunk[:40]!r}")
+            card_id, text = header.group(1), chunk
+        cards.append(Card(id=card_id, text=text))
     ids = [c.id for c in cards]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate card ids")
