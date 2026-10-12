@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -64,10 +64,34 @@ def test_schedule_and_repeats():
     assert [c.id for c, _ in drip.due_cards(cards, 0)] == ["R0"]
     picked = drip.due_cards(cards, 6)
     assert ("R6", 0) in [(c.id, o) for c, o in picked] and ("R0", 6) in [(c.id, o) for c, o in picked]
-    assert len(drip.due_cards(cards, 105)) == drip.MAX_PER_MESSAGE
-    assert drip.slot_number(cfg, date(2026, 10, 9), 1) == 4
-    moment, number = drip.next_slot(cfg, datetime(2026, 10, 8, 10, 0, tzinfo=ZoneInfo("Europe/Lisbon")))
-    assert (moment.hour, number) == (14, 1)
+    assert len(drip.due_cards(cards, 40)) == drip.MAX_PER_MESSAGE
+    assert drip.slot_number(cfg, date(2026, 10, 9)) == 1
+
+
+def test_one_random_send_a_day_inside_the_window():
+    cfg = config(DRIP_START="2026-10-08", DRIP_WINDOW="08:00-20:00")
+    tz = ZoneInfo("Europe/Lisbon")
+    days = [date(2026, 10, 8) + timedelta(days=i) for i in range(60)]
+    minutes = [drip.slot_minute(cfg, day) for day in days]
+    assert all(8 * 60 <= minute <= 20 * 60 for minute in minutes)
+    assert len(set(minutes)) > 40  # the time really moves from day to day
+    assert minutes == [drip.slot_minute(cfg, day) for day in days]  # stable across calls
+    assert drip.slot_minute(config(DRIP_SEED="other"), days[0]) != minutes[0]
+
+    # today's send if it is still ahead, otherwise tomorrow's — never twice a day
+    moment, number = drip.next_slot(cfg, datetime(2026, 10, 8, 0, 1, tzinfo=tz))
+    assert (moment.date(), number) == (date(2026, 10, 8), 0)
+    assert 8 <= moment.hour <= 20
+    moment, number = drip.next_slot(cfg, datetime(2026, 10, 8, 23, 59, tzinfo=tz))
+    assert (moment.date(), number) == (date(2026, 10, 9), 1)
+
+
+def test_window_is_validated():
+    assert drip.parse_window(" 08:30 - 09:00 ") == (510, 540)
+    with pytest.raises(ValueError):
+        drip.parse_window("20:00-08:00")  # overnight windows are not supported
+    with pytest.raises(ValueError):
+        drip.parse_window("8-20")
 
 
 def test_render_escapes_and_marks_repeats():
@@ -76,10 +100,14 @@ def test_render_escapes_and_marks_repeats():
     assert drip.render_card(card, 6).startswith("🔁 <i>повторення</i>\n")
 
 
-def test_long_cards_are_split_by_telegram_limit():
+def test_everything_due_goes_out_in_a_single_message():
+    picked = [(drip.Card(id="R6", text="new"), 0), (drip.Card(id="R0", text="review"), 6)]
+    message, dropped = drip.render_message(picked)
+    assert dropped == [] and drip.SEPARATOR in message and len(message) <= drip.TELEGRAM_LIMIT
+
     big = [(drip.Card(id=f"R{i}", text="x" * 3000), 0) for i in range(3)]
-    messages = drip.render_messages(big)
-    assert len(messages) == 3 and all(len(m) <= drip.TELEGRAM_LIMIT for m in messages)
+    message, dropped = drip.render_message(big)
+    assert len(message) <= drip.TELEGRAM_LIMIT and dropped == ["R1", "R2"]
 
 
 def test_id_comment_is_stripped_from_the_sent_text():
