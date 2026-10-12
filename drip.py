@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Spaced-repetition drip for a Ukrainian class chat.
 
-Posts study cards into a Telegram chat at fixed times of day. Stateless:
-which cards go out in a slot is a pure function of the calendar, so
-restarts and redeploys never lose or duplicate the schedule. Stdlib only.
+Posts one message a day into a Telegram chat, at a time drawn at random
+inside a daily window (08:00-20:00 by default). Stateless: both the time
+of day and the cards that go out are pure functions of the calendar, so
+restarts and redeploys never shift, lose or duplicate a send. Stdlib only.
 
-Card i (0-based, in deck order) is introduced in slot i and then repeats
-after 2, 6, 15 and 35 days (with three slots a day).
+Card i (0-based, in deck order) is introduced on day i and then repeats
+after 2, 6, 15 and 35 days. Everything due on a day goes out together in
+a single message, so the chat gets exactly one notification a day.
 
 Deck sources (first one set wins):
   DRIP_DECK_URL   URL of a deck file, e.g. the raw URL of a secret GitHub
@@ -29,14 +31,19 @@ Deck formats:
 Other env vars:
   TELEGRAM_BOT_TOKEN (or BOT_TOKEN / TELEGRAM_TOKEN)  bot token (required)
   DRIP_CHAT_ID    target chat id, e.g. -100XXXXXXXXXX (required)
-  DRIP_START      date of the first slot, YYYY-MM-DD (default: 2026-10-08)
-  DRIP_SLOTS      comma-separated local times (default: 09:00,14:00,20:00)
+  DRIP_START      date of the first send, YYYY-MM-DD (default: 2026-10-08)
+  DRIP_WINDOW     local window for the daily send (default: 08:00-20:00).
+                  The minute inside it is drawn from the date, so every day
+                  gets a different time and every process agrees on it.
+  DRIP_SEED       optional string mixed into that draw: change it to reshuffle
+                  the times without touching the schedule of the cards
   DRIP_TZ         IANA timezone (default: Europe/Lisbon)
-  DRIP_SEND_NOW   if 1, send the current slot once at boot and exit
+  DRIP_SEND_NOW   if 1, send today's cards once at boot and exit
 """
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import logging
@@ -55,12 +62,13 @@ log = logging.getLogger("drip")
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
-# Intervals expressed in slots. With 3 slots a day: now, +2d, +6d, +15d, +35d.
-REPEAT_OFFSETS = [0, 6, 18, 45, 105]
-# When several cards land in the same slot, send at most this many. The
+# Intervals in days: today, +2d, +6d, +15d, +35d.
+REPEAT_OFFSETS = [0, 2, 6, 15, 35]
+# When several cards fall due on the same day, send at most this many. The
 # order below drops the 2-day review first — it is the cheapest to skip.
 MAX_PER_MESSAGE = 3
-PRIORITY = [0, 105, 45, 18, 6]
+PRIORITY = [0, 35, 15, 6, 2]
+DEFAULT_WINDOW = "08:00-20:00"
 
 SEPARATOR = "\n\n➖➖➖\n\n"
 TELEGRAM_LIMIT = 4096
@@ -81,18 +89,23 @@ class Config:
     token: str
     chat_id: str
     tz: ZoneInfo
-    slots: list[tuple[int, int]]
+    window: tuple[int, int]  # minutes after midnight, start <= end
+    seed: str
     start: date
     deck_url: str | None
     deck_path: Path
 
 
-def parse_slots(raw: str) -> list[tuple[int, int]]:
-    slots = []
-    for part in raw.split(","):
-        hour, minute = part.strip().split(":")
-        slots.append((int(hour), int(minute)))
-    return sorted(slots)
+def parse_window(raw: str) -> tuple[int, int]:
+    """'08:00-20:00' -> (480, 1200), in minutes after midnight."""
+    try:
+        first, last = (part.strip() for part in raw.split("-", 1))
+        start, end = (int(h) * 60 + int(m) for h, m in (part.split(":") for part in (first, last)))
+    except ValueError:
+        raise ValueError(f"DRIP_WINDOW must look like 08:00-20:00, got {raw!r}") from None
+    if not 0 <= start <= end < 24 * 60:
+        raise ValueError(f"DRIP_WINDOW must be a same-day window inside 00:00-23:59, got {raw!r}")
+    return start, end
 
 
 def load_config(env: dict[str, str] | None = None) -> Config:
@@ -110,11 +123,14 @@ def load_config(env: dict[str, str] | None = None) -> Config:
     chat_id = env.get("DRIP_CHAT_ID", "").strip()
     if not chat_id:
         sys.exit("No target chat: set DRIP_CHAT_ID in the environment.")
+    if env.get("DRIP_SLOTS"):
+        log.warning("DRIP_SLOTS is no longer used: one message a day goes out inside DRIP_WINDOW")
     return Config(
         token=token,
         chat_id=chat_id,
         tz=ZoneInfo(env.get("DRIP_TZ", "Europe/Lisbon")),
-        slots=parse_slots(env.get("DRIP_SLOTS", "09:00,14:00,20:00")),
+        window=parse_window(env.get("DRIP_WINDOW") or DEFAULT_WINDOW),
+        seed=env.get("DRIP_SEED", ""),
         start=date.fromisoformat(env.get("DRIP_START", "2026-10-08")),
         deck_url=(env.get("DRIP_DECK_URL") or "").strip() or None,
         deck_path=Path(env.get("DRIP_DECK") or Path(__file__).with_name("deck.json")),
@@ -198,29 +214,39 @@ class DeckSource:
 # --------------------------------------------------------------- schedule
 
 
-def slot_datetime(config: Config, day: date, index: int) -> datetime:
-    hour, minute = config.slots[index]
-    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=config.tz)
+def slot_minute(config: Config, day: date) -> int:
+    """The day's send time, in minutes after midnight.
+
+    Drawn from the date (and DRIP_SEED), not from random(): the same day
+    always resolves to the same minute, so a restart cannot move it.
+    """
+    start, end = config.window
+    digest = hashlib.sha256(f"{config.seed}|{day.isoformat()}".encode()).digest()
+    return start + int.from_bytes(digest[:8], "big") % (end - start + 1)
 
 
-def slot_number(config: Config, day: date, index: int) -> int:
-    """Global slot counter since the first slot on START."""
-    return (day - config.start).days * len(config.slots) + index
+def slot_datetime(config: Config, day: date) -> datetime:
+    minute = slot_minute(config, day)
+    return datetime(day.year, day.month, day.day, minute // 60, minute % 60, tzinfo=config.tz)
+
+
+def slot_number(config: Config, day: date) -> int:
+    """Day counter since START: day 0 introduces the first card."""
+    return (day - config.start).days
 
 
 def next_slot(config: Config, now: datetime) -> tuple[datetime, int]:
-    """The first slot strictly after `now`, with its global slot number."""
+    """The next daily send strictly after `now`, with its day number."""
     for offset in (0, 1):
         day = now.date() + timedelta(days=offset)
-        for index in range(len(config.slots)):
-            moment = slot_datetime(config, day, index)
-            if moment > now:
-                return moment, slot_number(config, day, index)
+        moment = slot_datetime(config, day)
+        if moment > now:
+            return moment, slot_number(config, day)
     raise RuntimeError("no upcoming slot found")
 
 
 def due_cards(cards: list[Card], number: int) -> list[tuple[Card, int]]:
-    """Cards due in slot `number`, paired with the offset that scheduled them."""
+    """Cards due on day `number`, paired with the offset that scheduled them."""
     picked = []
     for offset in PRIORITY:
         position = number - offset
@@ -234,16 +260,23 @@ def render_card(card: Card, offset: int) -> str:
     return text if offset == 0 else f"🔁 <i>повторення</i>\n{text}"
 
 
-def render_messages(picked: list[tuple[Card, int]]) -> list[str]:
-    """Join cards into as few messages as fit Telegram's limit."""
-    messages: list[str] = []
+def render_message(picked: list[tuple[Card, int]]) -> tuple[str, list[str]]:
+    """One message a day: everything due, in priority order, that fits.
+
+    Returns the message and the ids left out because of Telegram's limit —
+    `picked` is already sorted by PRIORITY, so the cheapest reviews go first.
+    """
+    text, dropped = "", []
     for card, offset in picked:
         part = render_card(card, offset)
-        if messages and len(messages[-1]) + len(SEPARATOR) + len(part) <= TELEGRAM_LIMIT:
-            messages[-1] += SEPARATOR + part
+        candidate = f"{text}{SEPARATOR}{part}" if text else part
+        if len(candidate) <= TELEGRAM_LIMIT:
+            text = candidate
+        elif text:
+            dropped.append(card.id)
         else:
-            messages.append(part[:TELEGRAM_LIMIT])
-    return messages
+            text = part[:TELEGRAM_LIMIT]
+    return text, dropped
 
 
 # --------------------------------------------------------------- telegram
@@ -286,14 +319,16 @@ def check_chat(config: Config) -> None:
 def run_slot(config: Config, cards: list[Card], number: int) -> None:
     picked = due_cards(cards, number)
     if not picked:
-        log.info("slot %s: nothing due", number)
+        log.info("day %s: nothing due", number)
         return
-    ids = ", ".join(card.id for card, _ in picked)
-    ok = all(send(config, message) for message in render_messages(picked))
-    if ok:
-        log.info("slot %s: sent %s", number, ids)
+    message, dropped = render_message(picked)
+    if dropped:
+        log.warning("day %s: dropped for length: %s", number, ", ".join(dropped))
+    ids = ", ".join(card.id for card, _ in picked if card.id not in dropped)
+    if send(config, message):
+        log.info("day %s: sent %s", number, ids)
     else:
-        log.error("slot %s: delivery failed: %s", number, ids)
+        log.error("day %s: delivery failed: %s", number, ids)
 
 
 def main() -> None:
@@ -301,33 +336,37 @@ def main() -> None:
     config = load_config()
     source = DeckSource(config)
     cards = source.load()
+    start, end = config.window
     log.info(
-        "deck: %s cards from %s | start %s | slots %s | tz %s",
+        "deck: %s cards from %s | start %s | one message a day in %02d:%02d-%02d:%02d | tz %s",
         len(cards),
         "URL" if config.deck_url else config.deck_path.name,
         config.start,
-        ",".join(f"{h:02d}:{m:02d}" for h, m in config.slots),
+        start // 60,
+        start % 60,
+        end // 60,
+        end % 60,
         config.tz.key,
     )
     check_chat(config)
 
     if os.environ.get("DRIP_SEND_NOW") == "1":
         now = datetime.now(config.tz)
-        number = max(0, slot_number(config, now.date(), 0))
-        log.info("DRIP_SEND_NOW: sending slot %s once", number)
+        number = max(0, slot_number(config, now.date()))
+        log.info("DRIP_SEND_NOW: sending day %s once", number)
         run_slot(config, cards, number)
         return
 
     while True:
         moment, number = next_slot(config, datetime.now(config.tz))
         wait = (moment - datetime.now(config.tz)).total_seconds()
-        log.info("next slot %s at %s (in %.0f min)", number, moment.isoformat(), wait / 60)
+        log.info("next send (day %s) at %s (in %.0f min)", number, moment.isoformat(), wait / 60)
         while wait > 0:
             time.sleep(min(wait, 300))  # wake periodically so clock changes are picked up
             wait = (moment - datetime.now(config.tz)).total_seconds()
         cards = source.load()  # pick up deck edits without a restart
         run_slot(config, cards, number)
-        time.sleep(90)  # never fire the same slot twice
+        time.sleep(90)  # never fire the same day twice
 
 
 if __name__ == "__main__":

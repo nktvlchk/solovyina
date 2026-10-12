@@ -61,7 +61,8 @@ Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/mistakes`, `/direction`,
 **In group chats** the bot stays silent unless asked: it ignores ordinary
 messages and answers only `/tr` (translate the text after the command, or the
 message you reply to), `/check` and `/say`. The optional `drip.py` worker can
-post study cards into the same group three times a day.
+post study cards into the same group once a day, at a time drawn at random
+inside a daily window.
 
 ## Architecture
 

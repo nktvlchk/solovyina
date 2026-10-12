@@ -70,8 +70,14 @@ bot token or API key is replaced with `[REDACTED]`. Do not set
 
 ## Optional: spaced-repetition poster (`drip.py`)
 
-A separate, stdlib-only process that posts study cards to a class chat three
-times a day (new card plus repeats after 2, 6, 15 and 35 days).
+A separate, stdlib-only process that posts study cards to a class chat **once a
+day** — one message, at a time drawn at random inside a daily window
+(`08:00-20:00` by default). The message carries the day's new card plus
+whatever is due for repetition (after 2, 6, 15 and 35 days), up to three cards.
+
+The time of day is derived from the date, not from `random()`: every process
+agrees on it, so a restart or a redeploy can neither move the send nor repeat
+it. A send missed while the service was down is skipped, not caught up.
 
 The deck itself is **not** stored in this public repository: class material
 stays private. Put the deck file (Markdown format, see `docs/deck.example.md`)
@@ -81,11 +87,16 @@ Railway setup: a second service from this repository with
 - Custom Start Command: `python drip.py`
 - Variables: `TELEGRAM_BOT_TOKEN` (a bot that is a member of the chat),
   `DRIP_CHAT_ID`, `DRIP_DECK_URL` (raw gist URL), optionally `DRIP_START`,
-  `DRIP_SLOTS`, `DRIP_TZ`.
+  `DRIP_WINDOW` (e.g. `08:00-20:00`), `DRIP_SEED`, `DRIP_TZ`.
+  `DRIP_SLOTS` from the old three-a-day schedule is ignored; the process logs a
+  warning if it is still set.
 
-The deck is re-downloaded before every slot, so editing the gist updates the
-cards without a redeploy. Cards are scheduled by their position: append new
-cards to the end so the existing schedule does not shift. The chat ID is
+The deck is re-downloaded before every send, so editing the gist updates the
+cards without a redeploy. Cards are scheduled by their position: card *i* is
+introduced `i` days after `DRIP_START`, so append new cards to the end and the
+existing schedule does not shift. Moving `DRIP_START` back by *n* days is how
+you skip the first *n* cards — useful after a change of cadence, to carry on
+where the previous schedule had got to instead of starting the deck again. The chat ID is
 configuration, never code.
 
 ## Build note
