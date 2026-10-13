@@ -62,8 +62,8 @@ def test_schedule_and_repeats():
     cfg = config(DRIP_START="2026-10-08")
     cards = [drip.Card(id=f"R{i}", text=f"card {i}") for i in range(200)]
     assert [c.id for c, _ in drip.due_cards(cards, 0)] == ["R0"]
-    picked = drip.due_cards(cards, 6)
-    assert ("R6", 0) in [(c.id, o) for c, o in picked] and ("R0", 6) in [(c.id, o) for c, o in picked]
+    picked = drip.due_cards(cards, 4)
+    assert ("R4", 0) in [(c.id, o) for c, o in picked] and ("R0", 4) in [(c.id, o) for c, o in picked]
     assert len(drip.due_cards(cards, 40)) == drip.MAX_PER_MESSAGE
     assert drip.slot_number(cfg, date(2026, 10, 9)) == 1
 

@@ -7,7 +7,7 @@ of day and the cards that go out are pure functions of the calendar, so
 restarts and redeploys never shift, lose or duplicate a send. Stdlib only.
 
 Card i (0-based, in deck order) is introduced on day i and then repeats
-after 2, 6, 15 and 35 days. Everything due on a day goes out together in
+after 4, 10, 21 and 45 days. Everything due on a day goes out together in
 a single message, so the chat gets exactly one notification a day.
 
 Deck sources (first one set wins):
@@ -62,12 +62,12 @@ log = logging.getLogger("drip")
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
-# Intervals in days: today, +2d, +6d, +15d, +35d.
-REPEAT_OFFSETS = [0, 2, 6, 15, 35]
+# Intervals in days: today, +4d, +10d, +21d, +45d.
+REPEAT_OFFSETS = [0, 4, 10, 21, 45]
 # When several cards fall due on the same day, send at most this many. The
-# order below drops the 2-day review first — it is the cheapest to skip.
+# order below drops the 4-day review first — it is the cheapest to skip.
 MAX_PER_MESSAGE = 3
-PRIORITY = [0, 35, 15, 6, 2]
+PRIORITY = [0, 45, 21, 10, 4]
 DEFAULT_WINDOW = "08:00-20:00"
 
 SEPARATOR = "\n\n➖➖➖\n\n"

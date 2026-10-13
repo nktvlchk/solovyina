@@ -73,7 +73,7 @@ bot token or API key is replaced with `[REDACTED]`. Do not set
 A separate, stdlib-only process that posts study cards to a class chat **once a
 day** — one message, at a time drawn at random inside a daily window
 (`08:00-20:00` by default). The message carries the day's new card plus
-whatever is due for repetition (after 2, 6, 15 and 35 days), up to three cards.
+whatever is due for repetition (after 4, 10, 21 and 45 days), up to three cards.
 
 The time of day is derived from the date, not from `random()`: every process
 agrees on it, so a restart or a redeploy can neither move the send nor repeat
