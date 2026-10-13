@@ -23,6 +23,8 @@ EVENT_LABELS = {
     "feedback": "оцінка виправлення",
     "tts": "озвучка",
     "mistakes": "Мої помилки",
+    "review": "повторення",
+    "remember": "запам'ятати",
     "direction": "зміна напряму",
     "delete_data": "видалення даних",
     "rate_limited": "ліміт запитів",

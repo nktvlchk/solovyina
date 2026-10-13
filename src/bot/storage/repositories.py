@@ -5,15 +5,42 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import secrets
+import sqlite3
 from dataclasses import dataclass
 
 from bot.language import Direction
 from bot.models.correction import Correction, Verdict
+from bot.services.dictionary import normalize
+from bot.services.review import (
+    ASK_FIX,
+    ASKS,
+    EASE_DEFAULT,
+    GRADES,
+    SrsState,
+    apply_grade,
+)
 from bot.storage.database import Database
 
 
 def today() -> str:
     return dt.datetime.now(dt.UTC).date().isoformat()
+
+
+def _as_utc(moment: dt.datetime | None) -> dt.datetime:
+    if moment is None:
+        moment = dt.datetime.now(dt.UTC)
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(dt.UTC).replace(tzinfo=None)
+    return moment.replace(microsecond=0)
+
+
+def _stamp(moment: dt.datetime | None) -> str:
+    """UTC timestamp in the same shape as SQLite datetime('now')."""
+    return _as_utc(moment).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _clean(text: str, limit: int) -> str:
+    return " ".join(text.split())[:limit]
 
 
 class SettingsRepository:
@@ -55,6 +82,192 @@ class SavedWordsRepository:
             (user_id, limit),
         )
         return [(r["word"], r["translation"]) for r in rows]
+
+
+@dataclass(frozen=True)
+class Card:
+    id: int
+    kind: str
+    ask: str
+    front: str
+    back: str
+    note: str
+    ease: float
+    interval_days: int
+    reps: int
+    lapses: int
+    due_at: str
+
+    @property
+    def state(self) -> SrsState:
+        return SrsState(self.ease, self.interval_days, self.reps, self.lapses)
+
+
+_CARD_COLUMNS = "id, kind, ask, front, back, note, ease, interval_days, reps, lapses, due_at"
+
+
+class CardsRepository:
+    """One deck per user. Mistake cards mirror confirmed corrections;
+    word cards are added only when the user asks to remember something."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def _card(self, row: sqlite3.Row) -> Card:
+        return Card(
+            id=row["id"],
+            kind=row["kind"],
+            ask=row["ask"],
+            front=row["front"],
+            back=row["back"],
+            note=row["note"],
+            ease=float(row["ease"]),
+            interval_days=int(row["interval_days"]),
+            reps=int(row["reps"]),
+            lapses=int(row["lapses"]),
+            due_at=row["due_at"],
+        )
+
+    def get(self, user_id: int, card_id: int) -> Card | None:
+        rows = self.db.query(
+            f"SELECT {_CARD_COLUMNS} FROM cards WHERE id = ? AND user_id = ?",
+            (card_id, user_id),
+        )
+        return self._card(rows[0]) if rows else None
+
+    def due(self, user_id: int, now: dt.datetime | None = None, limit: int = 100) -> list[Card]:
+        rows = self.db.query(
+            f"SELECT {_CARD_COLUMNS} FROM cards WHERE user_id = ? AND due_at <= ? "
+            "ORDER BY due_at, id LIMIT ?",
+            (user_id, _stamp(now), limit),
+        )
+        return [self._card(row) for row in rows]
+
+    def summary(self, user_id: int, now: dt.datetime | None = None) -> tuple[int, int, str | None]:
+        """(due count, deck size, due_at of the next card that is not due yet)."""
+        moment = _stamp(now)
+        total = self.db.query("SELECT COUNT(*) AS n FROM cards WHERE user_id = ?", (user_id,))[0]["n"]
+        due = self.db.query(
+            "SELECT COUNT(*) AS n FROM cards WHERE user_id = ? AND due_at <= ?",
+            (user_id, moment),
+        )[0]["n"]
+        nxt = self.db.query(
+            "SELECT due_at FROM cards WHERE user_id = ? AND due_at > ? ORDER BY due_at LIMIT 1",
+            (user_id, moment),
+        )
+        return due, total, (nxt[0]["due_at"] if nxt else None)
+
+    def save_word(
+        self,
+        user_id: int,
+        ask: str,
+        front: str,
+        back: str,
+        note: str = "",
+        now: dt.datetime | None = None,
+    ) -> str:
+        """Insert or refresh a word card. Returns saved, updated, exists, or rejected.
+
+        A changed translation does not reset the schedule.
+        """
+        if ask not in ASKS or ask == ASK_FIX:
+            return "rejected"
+        front, back, note = _clean(front, 300), _clean(back, 500), _clean(note, 400)
+        key = normalize(front)[:300]
+        if not key or not back or key == normalize(back):
+            return "rejected"
+        moment = _stamp(now)
+        rows = self.db.query(
+            "SELECT id, ask, front, back, note FROM cards "
+            "WHERE user_id = ? AND kind = 'word' AND source_key = ?",
+            (user_id, key),
+        )
+        if not rows:
+            self.db.execute(
+                "INSERT INTO cards(user_id, kind, source_key, ask, front, back, note, ease, due_at, "
+                "updated_at) VALUES (?, 'word', ?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, key, ask, front, back, note, EASE_DEFAULT, moment, moment),
+            )
+            return "saved"
+        row = rows[0]
+        if row["ask"] == ask and row["front"] == front and row["back"] == back and row["note"] == note:
+            return "exists"
+        self.db.execute(
+            "UPDATE cards SET ask = ?, front = ?, back = ?, note = ?, updated_at = ? "
+            "WHERE id = ? AND user_id = ?",
+            (ask, front, back, note, moment, row["id"], user_id),
+        )
+        return "updated"
+
+    def sync_mistakes(self, user_id: int, now: dt.datetime | None = None) -> None:
+        """Match mistake cards to corrections the user confirmed as real errors.
+
+        New cards are due immediately. Existing schedules are left alone.
+        A correction that is no longer "this is an error" loses its card.
+        """
+        moment = _stamp(now)
+        self.db.transaction(
+            [
+                (
+                    "DELETE FROM cards WHERE user_id = ? AND kind = 'mistake' AND source_key NOT IN ("
+                    "SELECT c.id FROM corrections c "
+                    "JOIN correction_feedback f ON f.correction_id = c.id "
+                    "WHERE c.user_id = ? AND f.user_id = ? AND f.verdict = ?)",
+                    (user_id, user_id, user_id, Verdict.ERROR.value),
+                ),
+                (
+                    "INSERT INTO cards(user_id, kind, source_key, ask, front, back, note, due_at, "
+                    "updated_at) "
+                    "SELECT c.user_id, 'mistake', c.id, ?, c.original, c.replacement, c.explanation, ?, ? "
+                    "FROM corrections c JOIN correction_feedback f ON f.correction_id = c.id "
+                    "WHERE c.user_id = ? AND f.user_id = ? AND f.verdict = ? "
+                    "ON CONFLICT(user_id, kind, source_key) DO NOTHING",
+                    (ASK_FIX, moment, moment, user_id, user_id, Verdict.ERROR.value),
+                ),
+            ]
+        )
+
+    def grade(
+        self,
+        user_id: int,
+        card_id: int,
+        grade: int,
+        now: dt.datetime | None = None,
+    ) -> Card | None:
+        """Apply one grade if the card still has the state the caller saw.
+
+        Returns None when the card is missing or that state was already graded
+        (a double tap must not push the interval twice).
+        """
+        if grade not in GRADES:
+            return None
+        card = self.get(user_id, card_id)
+        if card is None:
+            return None
+        moment = _as_utc(now)
+        state = apply_grade(card.state, grade)
+        due = moment + dt.timedelta(days=state.interval_days)
+        cursor = self.db.execute(
+            "UPDATE cards SET ease = ?, interval_days = ?, reps = ?, lapses = ?, due_at = ?, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND reps = ? AND lapses = ? AND interval_days = ? AND due_at = ?",
+            (
+                state.ease,
+                state.interval_days,
+                state.reps,
+                state.lapses,
+                _stamp(due),
+                _stamp(moment),
+                card_id,
+                user_id,
+                card.reps,
+                card.lapses,
+                card.interval_days,
+                card.due_at,
+            ),
+        )
+        if cursor.rowcount == 0:
+            return None
+        return self.get(user_id, card_id)
 
 
 @dataclass(frozen=True)
@@ -197,6 +410,7 @@ class PrivacyRepository:
             ("correction_feedback", "user_id"),
             ("corrections", "user_id"),
             ("saved_words", "user_id"),
+            ("cards", "user_id"),
             ("user_settings", "user_id"),
         ):
             rows = self.db.query(f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = ?", (user_id,))
@@ -211,6 +425,7 @@ class PrivacyRepository:
                 ),
                 ("DELETE FROM corrections WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM saved_words WHERE user_id = ?", (user_id,)),
+                ("DELETE FROM cards WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM user_settings WHERE user_id = ?", (user_id,)),
             ]
         )
@@ -229,6 +444,12 @@ class PrivacyRepository:
                 ("DELETE FROM corrections WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM saved_words WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM metrics_daily WHERE day < date('now', ?)", (cutoff,)),
+                ("DELETE FROM cards WHERE updated_at < datetime('now', ?)", (cutoff,)),
+                (
+                    "DELETE FROM cards WHERE kind = 'mistake' "
+                    "AND source_key NOT IN (SELECT id FROM corrections)",
+                    (),
+                ),
             ]
         )
         after = self.db.query("SELECT COUNT(*) AS n FROM corrections")[0]["n"]
@@ -258,6 +479,8 @@ class AnalyticsRepository:
             "direction",
             "delete_data",
             "rate_limited",
+            "review",
+            "remember",
         }
     )
     DETAILS = frozenset(
@@ -276,6 +499,15 @@ class AnalyticsRepository:
             "budget",
             "button",
             "command",
+            "again",
+            "hard",
+            "good",
+            "easy",
+            "saved",
+            "updated",
+            "exists",
+            "empty",
+            "done",
         }
     )
 

@@ -22,6 +22,7 @@ from bot.services.tts import TtsService
 from bot.storage.database import Database
 from bot.storage.repositories import (
     AnalyticsRepository,
+    CardsRepository,
     CorrectionsRepository,
     MetricsRepository,
     PrivacyRepository,
@@ -63,6 +64,7 @@ class Services:
     tts: TtsService
     user_settings: SettingsRepository
     saved_words: SavedWordsRepository
+    cards: CardsRepository
     corrections: CorrectionsRepository
     metrics: MetricsRepository
     privacy: PrivacyRepository
@@ -112,6 +114,7 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None,
         tts=TtsService(settings.max_tts_length),
         user_settings=SettingsRepository(db),
         saved_words=SavedWordsRepository(db),
+        cards=CardsRepository(db),
         corrections=corrections,
         metrics=metrics,
         privacy=PrivacyRepository(db),
@@ -171,6 +174,8 @@ COMMANDS = [
     ("say", "Як сказати? Природний український варіант"),
     ("check", "Перевір мене: перевірка тексту"),
     ("mistakes", "Мої помилки"),
+    ("review", "Повторити картки"),
+    ("remember", "Запам'ятати слово"),
     ("direction", "Напрям перекладу"),
     ("privacy", "Які дані обробляються"),
     ("delete_my_data", "Видалити мої дані"),
