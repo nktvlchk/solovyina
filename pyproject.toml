@@ -1,6 +1,6 @@
 [project]
 name = "solovyina"
-version = "0.2.0"
+version = "0.3.0"
 description = "Telegram helper for Russian speakers switching to Ukrainian"
 readme = "README.md"
 license = "GPL-2.0-or-later"

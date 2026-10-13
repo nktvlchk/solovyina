@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -46,6 +46,29 @@ CREATE TABLE IF NOT EXISTS corrections (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_corrections_user ON corrections(user_id);
+
+-- Personal Anki-like deck. `kind` is mistake (a confirmed correction) or word
+-- (something the user asked to remember). Scheduling columns are SM-2-ish;
+-- due_at is UTC 'YYYY-MM-DD HH:MM:SS'.
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('mistake', 'word')),
+    source_key TEXT NOT NULL,
+    ask TEXT NOT NULL CHECK (ask IN ('fix', 'say', 'mean')),
+    front TEXT NOT NULL,
+    back TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    ease REAL NOT NULL DEFAULT 2.5,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    reps INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    due_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, kind, source_key)
+);
+CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(user_id, due_at);
 
 CREATE TABLE IF NOT EXISTS correction_feedback (
     correction_id TEXT NOT NULL REFERENCES corrections(id) ON DELETE CASCADE,

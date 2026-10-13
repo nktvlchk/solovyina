@@ -4,16 +4,18 @@
 * Перевір мене  — check Ukrainian text, explain 1–3 important mistakes
 * Поясни слово  — meaning, stress, example, audio
 * Мої помилки   — mistakes the user confirmed with "✅ Це помилка"
+* Повторити     — Anki-like cards: those mistakes, plus words they saved
+* Запам'ятати   — the next message becomes a card
 
 A mode applies to the NEXT message only, so the default behavior
-(plain translation) is never "stuck" in a mode.
+(plain translation) is never "stuck" in a mode. Review starts immediately.
 """
 
 from __future__ import annotations
 
 import time
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
@@ -22,7 +24,14 @@ from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS
 from bot.services.translation import TranslationUnavailable
 
-SAY, CHECK, EXPLAIN, MISTAKES = "say", "check", "explain", "mistakes"
+SAY, CHECK, EXPLAIN, MISTAKES, REVIEW, REMEMBER = (
+    "say",
+    "check",
+    "explain",
+    "mistakes",
+    "review",
+    "remember",
+)
 MODE_KEY = "mode"
 
 BUTTONS = {
@@ -30,12 +39,15 @@ BUTTONS = {
     "✍️ Перевір мене": CHECK,
     "📖 Поясни слово": EXPLAIN,
     "🗂 Мої помилки": MISTAKES,
+    "🃏 Повторити": REVIEW,
+    "📌 Запам'ятати": REMEMBER,
 }
 
 PROMPTS = {
     SAY: "💬 Надішліть фразу російською або змішану — підкажу природний український варіант.",
     CHECK: "✍️ Надішліть текст українською — перевірю й поясню до трьох головних помилок.",
     EXPLAIN: "📖 Надішліть одне слово — покажу значення, наголос, приклад і озвучку.",
+    REMEMBER: "📌 Надішліть слово або фразу — перекладу і додам картку для повторення.",
 }
 
 
@@ -48,6 +60,11 @@ async def select_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: 
     svc = services(context)
     if mode == MISTAKES:
         await show_mistakes(update, context)
+        return
+    if mode == REVIEW:
+        from bot.handlers.review import start_review
+
+        await start_review(update, context)
         return
     if mode == CHECK and not svc.correction.enabled:
         await update.effective_message.reply_text("🔒 Перевірка тексту зараз вимкнена.")
@@ -91,10 +108,10 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
     track(update, context, "say", source=result.source.value, ok=True, latency_ms=elapsed, chars=len(text))
     source = esc(SOURCE_LABELS[result.source])
     reply = f"<b>{esc_line(text)}</b>\n\n🇺🇦 {esc(result.text)}\n\n<i>Джерело: {source}</i>"
-    markup = None
-    if len(result.text) <= svc.settings.max_tts_length:
-        key = svc.text_cache.put(result.text)
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts:{key}")]])
+    from bot.handlers.review import attach_actions
+    from bot.services.review import ASK_SAY
+
+    markup = attach_actions(svc, tts_text=result.text, ask=ASK_SAY, front=text, back=result.text)
     await reply_html(update.effective_message, reply, reply_markup=markup)
 
 
@@ -128,6 +145,7 @@ async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     for i, c in enumerate(items, 1):
         lines.append(f"{i}. <s>{esc_line(c.original)}</s> → <b>{esc_line(c.replacement)}</b>")
         lines.append(f"   <i>{esc_line(c.explanation)}</i>")
+    lines += ["", "🃏 Повторити їх картками: /review"]
     await reply_html(update.effective_message, "\n".join(lines))
 
 
@@ -151,5 +169,10 @@ async def dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
         return True
     if mode == EXPLAIN:
         await run_explain(update, context, text)
+        return True
+    if mode == REMEMBER:
+        from bot.handlers.review import run_remember
+
+        await run_remember(update, context, text)
         return True
     return False

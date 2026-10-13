@@ -191,12 +191,13 @@ async def _auto_translate_and_reply(update: Update, context: ContextTypes.DEFAUL
         latency_ms=elapsed,
         chars=len(text),
     )
+    from bot.handlers.review import attach_actions
+    from bot.services.review import ASK_MEAN, ASK_SAY
+
     reply = format_phrase(text, result)
     tts_text = result.text if direction is Direction.RU_UK else text
-    markup = None
-    if tts_text and len(tts_text) <= svc.settings.max_tts_length:
-        key = svc.text_cache.put(tts_text)
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts:{key}")]])
+    ask = ASK_SAY if direction is Direction.RU_UK else ASK_MEAN
+    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=text, back=result.text)
     await reply_html(update.effective_message, reply, reply_markup=markup)
     return True
 
@@ -209,6 +210,8 @@ async def _translate_and_reply(
     detected: bool,
     guessed: bool = False,
 ) -> None:
+    from bot.handlers.review import attach_actions, sides_from_lookup, sides_from_pair
+
     svc = services(context)
     message = update.effective_message
     is_word = len(text.split()) == 1
@@ -218,6 +221,7 @@ async def _translate_and_reply(
     if guessed:
         attempts.append(Direction.UK_RU if direction is Direction.RU_UK else Direction.RU_UK)
     reply = tts_text = source = None
+    sides = None
     async with svc.concurrency():
         for attempt in attempts:
             try:
@@ -225,11 +229,13 @@ async def _translate_and_reply(
                     lookup = await svc.translation.translate_word(text, attempt, user_id(update))
                     reply, tts_text = format_word(lookup), lookup.uk_word
                     source = lookup.result.source.value if lookup.result else None
+                    sides = sides_from_lookup(lookup)
                 else:
                     result = await svc.translation.translate_phrase(text, attempt, user_id(update))
                     reply = format_phrase(text, result)
                     tts_text = result.text if attempt is Direction.RU_UK else text
                     source = result.source.value
+                    sides = sides_from_pair(text, result.text, attempt)
             except TranslationUnavailable:
                 continue
             direction = attempt
@@ -262,10 +268,8 @@ async def _translate_and_reply(
     if detected and is_private(update):
         label = esc(DIRECTION_LABELS[direction])
         reply += f"\n\n<i>{label}. Закріпити інший напрям: /direction</i>"
-    markup = None
-    if tts_text and len(tts_text) <= svc.settings.max_tts_length:
-        key = svc.text_cache.put(tts_text)
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts:{key}")]])
+    ask, front, back, note = sides if sides is not None else ("", "", "", "")
+    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=front, back=back, note=note)
     await reply_html(message, reply, reply_markup=markup)
 
 

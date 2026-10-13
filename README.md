@@ -36,7 +36,9 @@ did I get wrong".
    three explanations. Every correction has its own buttons:
    `✅ Це помилка` · `❌ Тут немає помилки` · `✍️ Лише стиль`.
 4. **🗂 Мої помилки** → the corrections you confirmed.
-5. Any other message is translated (uk ⇄ ru). Every reply names the source
+5. **🃏 Повторити** → flashcards (question, then the answer, then Again / Hard /
+   Good / Easy) from those mistakes and from words you asked to remember.
+6. Any other message is translated (uk ⇄ ru). Every reply names the source
    it actually came from.
 
 ## Features (what the code really does)
@@ -49,14 +51,15 @@ did I get wrong".
 | "Перевір мене" (`/check`) | model returns validated JSON: max 3 corrections, error vs style, "no errors" allowed |
 | Feedback per correction | stored with model name and prompt version, re-voting allowed, no duplicates |
 | "Мої помилки" (`/mistakes`) | corrections you confirmed as errors |
+| Review cards (`/review`) | Anki-like again / hard / good / easy. Deck = confirmed mistakes + words saved with 📌 or `/remember` |
 | "Поясни слово" | dictionary entry, part of speech, Wiktionary definitions, stress/IPA, example |
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
 | Product analytics | `/stats [days]` for `ADMIN_IDS`: active/new/returning users, actions by feature, translation sources, share of "error / not an error / style" ratings, quality per model and prompt version; `/export_stats` sends a CSV of pseudonymous events for 30 days |
 
-Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/mistakes`, `/direction`,
-`/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
+Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/mistakes`, `/review`,
+`/remember`, `/direction`, `/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
 
 **In group chats** the bot stays silent unless asked: it ignores ordinary
 messages and answers only `/tr` (translate the text after the command, or the
@@ -70,7 +73,7 @@ inside a daily window.
 src/bot/
   main.py, app.py, config.py      entry point, wiring, env validation
   handlers/                       Telegram only: common, translation, modes,
-                                  correction, feedback, admin
+                                  correction, feedback, review, admin
   services/                       business logic: dictionary, translation chain,
                                   correction, tts, limits
   providers/                      external APIs: wiktionary, mymemory, anthropic
@@ -154,7 +157,8 @@ provider's variables, never in the repository.
 * Sent to third parties: Wiktionary (single words), MyMemory (translation),
   Anthropic (checks/phrasing, if enabled), Google TTS (only when 🔊 is pressed).
 * Stored: chosen direction; for checks only the corrected fragments, the
-  explanation, model name, prompt version and your rating; a product-analytics
+  explanation, model name, prompt version and your rating; review cards (the
+  fragment or word, the answer, and when it is due); a product-analytics
   log of actions (feature, source, direction, success, latency, text length,
   rating) under a salted pseudonymous key, never the Telegram ID or the text;
   aggregated counters.
@@ -210,10 +214,8 @@ CI runs all of the above on every pull request
 
 ## Roadmap
 
-1. **Повторити** — short practice on your own confirmed mistakes (spaced repetition).
-2. Measure check quality: share of confirmed errors and false corrections
+1. Measure check quality: share of confirmed errors and false corrections
    per model / prompt version (data is already collected).
-3. Word forms in "Поясни слово" (declension/conjugation from an open source).
-4. Save words to a personal list (storage table already exists).
+2. Word forms in "Поясни слово" (declension/conjugation from an open source).
 
 Out of scope for now: a full course, a voice tutor, pronunciation scoring.
