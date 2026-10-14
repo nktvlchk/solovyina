@@ -25,6 +25,7 @@ from bot.storage.repositories import (
     CardsRepository,
     CorrectionsRepository,
     MetricsRepository,
+    PracticeLogRepository,
     PrivacyRepository,
     SavedWordsRepository,
     SettingsRepository,
@@ -66,6 +67,7 @@ class Services:
     saved_words: SavedWordsRepository
     cards: CardsRepository
     corrections: CorrectionsRepository
+    practice: PracticeLogRepository
     metrics: MetricsRepository
     privacy: PrivacyRepository
     rate_limiter: RateLimiter
@@ -116,6 +118,7 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None,
         saved_words=SavedWordsRepository(db),
         cards=CardsRepository(db),
         corrections=corrections,
+        practice=PracticeLogRepository(db),
         metrics=metrics,
         privacy=PrivacyRepository(db),
         rate_limiter=RateLimiter(settings.user_rate_limit_per_minute),
@@ -176,6 +179,8 @@ COMMANDS = [
     ("explain", "Пояснити слово українською"),
     ("mistakes", "Мої помилки"),
     ("review", "Повторити картки"),
+    ("practice", "Тренування: до п'яти відповідей"),
+    ("progress", "Прогрес за тиждень"),
     ("remember", "Запам'ятати слово"),
     ("direction", "Напрям перекладу"),
     ("privacy", "Які дані обробляються"),

@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS cards (
     UNIQUE (user_id, kind, source_key)
 );
 CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(user_id, due_at);
+
+-- One row per typed practice answer. Stores only whether it was right,
+-- never the answer itself.
+CREATE TABLE IF NOT EXISTS practice_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_practice_user ON practice_log(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS correction_feedback (
     correction_id TEXT NOT NULL REFERENCES corrections(id) ON DELETE CASCADE,

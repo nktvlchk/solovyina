@@ -78,6 +78,9 @@ def format_correction(index: int, c: Correction) -> str:
 
 
 async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.handlers.practice import clear_practice
+
+    clear_practice(context)
     svc = services(context)
     if not svc.correction.enabled:
         await update.effective_message.reply_text(UNAVAILABLE_MESSAGES["disabled"])

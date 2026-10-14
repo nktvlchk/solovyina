@@ -66,6 +66,7 @@ def test_no_identity_columns_in_schema(make_services):
         "corrections",
         "correction_feedback",
         "cards",
+        "practice_log",
         "metrics_daily",
     ):
         columns |= {r["name"] for r in svc.db.query(f"PRAGMA table_info({table})")}

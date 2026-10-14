@@ -299,6 +299,9 @@ async def _present(update: Update, text: str, markup, *, edit: bool) -> None:
 
 
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.handlers.practice import clear_practice
+
+    clear_practice(context)
     svc = services(context)
     uid = user_id(update)
     svc.cards.sync_mistakes(uid)
@@ -336,8 +339,10 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def run_remember(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    from bot.handlers.practice import clear_practice
     from bot.handlers.translation import LAST_DIRECTION_KEY, _resolve_direction, guard
 
+    clear_practice(context)
     if not await guard(update, context, text):
         return
     svc = services(context)

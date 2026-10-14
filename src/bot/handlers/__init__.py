@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers import admin, common, correction, feedback, modes, review, translation
+from bot.handlers import admin, common, correction, feedback, modes, practice, review, translation
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler(["tr", "translate"], translation.cmd_translate, filters=ANY_CHAT))
     app.add_handler(CommandHandler("mistakes", modes.cmd_mistakes, filters=PRIVATE))
     app.add_handler(CommandHandler("review", review.cmd_review, filters=PRIVATE))
+    app.add_handler(CommandHandler("practice", practice.cmd_practice, filters=PRIVATE))
+    app.add_handler(CommandHandler("progress", practice.cmd_progress, filters=PRIVATE))
     app.add_handler(CommandHandler("remember", review.cmd_remember, filters=PRIVATE))
     app.add_handler(CommandHandler("stats", admin.cmd_stats, filters=PRIVATE))
     app.add_handler(CommandHandler("export_stats", admin.cmd_export_stats, filters=PRIVATE))
@@ -56,6 +58,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(feedback.on_feedback_callback, pattern=r"^fb:"))
     app.add_handler(CallbackQueryHandler(review.on_review_callback, pattern=r"^rv:"))
     app.add_handler(CallbackQueryHandler(review.on_remember_callback, pattern=r"^mem:"))
+    app.add_handler(CallbackQueryHandler(practice.on_practice_callback, pattern=r"^pr:"))
 
     app.add_handler(MessageHandler(PRIVATE & filters.TEXT & ~filters.COMMAND, translation.on_text))
     app.add_error_handler(on_error)

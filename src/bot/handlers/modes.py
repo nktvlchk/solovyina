@@ -5,10 +5,12 @@
 * Поясни слово  — meaning, stress, example, audio
 * Мої помилки   — mistakes the user confirmed with "✅ Це помилка"
 * Повторити     — Anki-like cards: those mistakes, plus words they saved
+* Тренування    — up to five typed answers from cards that are due
 * Запам'ятати   — the next message becomes a card
 
 A mode applies to the NEXT message only, so the default behavior
-(plain translation) is never "stuck" in a mode. Review starts immediately.
+(plain translation) is never "stuck" in a mode. Review and practice start
+immediately. A typed practice answer is handled before translation.
 """
 
 from __future__ import annotations
@@ -23,12 +25,13 @@ from bot.handlers.util import command_text, is_private, reply_html, services, tr
 from bot.models.translation import SOURCE_LABELS
 from bot.services.translation import ExplanationUnavailable, TranslationUnavailable
 
-SAY, CHECK, EXPLAIN, MISTAKES, REVIEW, REMEMBER = (
+SAY, CHECK, EXPLAIN, MISTAKES, REVIEW, PRACTICE, REMEMBER = (
     "say",
     "check",
     "explain",
     "mistakes",
     "review",
+    "practice",
     "remember",
 )
 MODE_KEY = "mode"
@@ -39,6 +42,7 @@ BUTTONS = {
     "📖 Поясни слово": EXPLAIN,
     "🗂 Мої помилки": MISTAKES,
     "🃏 Повторити": REVIEW,
+    "🎯 Тренування": PRACTICE,
     "📌 Запам'ятати": REMEMBER,
 }
 
@@ -52,10 +56,14 @@ PROMPTS = {
 
 def modes_keyboard() -> ReplyKeyboardMarkup:
     labels = list(BUTTONS)
-    return ReplyKeyboardMarkup([labels[:2], labels[2:]], resize_keyboard=True, is_persistent=True)
+    rows = [labels[i : i + 2] for i in range(0, len(labels), 2)]
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 
 async def select_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str) -> None:
+    from bot.handlers.practice import clear_practice
+
+    clear_practice(context)
     svc = services(context)
     if mode == MISTAKES:
         await show_mistakes(update, context)
@@ -64,6 +72,11 @@ async def select_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: 
         from bot.handlers.review import start_review
 
         await start_review(update, context)
+        return
+    if mode == PRACTICE:
+        from bot.handlers.practice import start_practice
+
+        await start_practice(update, context)
         return
     if mode == CHECK and not svc.correction.enabled:
         await update.effective_message.reply_text("🔒 Перевірка тексту зараз вимкнена.")
@@ -105,8 +118,10 @@ async def cmd_explain(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    from bot.handlers.practice import clear_practice
     from bot.handlers.translation import guard
 
+    clear_practice(context)
     if not await guard(update, context, text):
         return
     svc = services(context)
@@ -132,10 +147,12 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
 
 
 async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    from bot.handlers.practice import clear_practice
     from bot.handlers.review import attach_actions
     from bot.handlers.translation import guard
     from bot.services.review import ASK_MEAN
 
+    clear_practice(context)
     if len(text) > 120 or len(text.split()) > 8:
         await update.effective_message.reply_text(
             "📖 Надішліть одне слово або короткий вислів (до 8 слів). "
@@ -195,6 +212,9 @@ async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: 
 
 
 async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.handlers.practice import clear_practice
+
+    clear_practice(context)
     svc = services(context)
     items = svc.corrections.confirmed_for_user(user_id(update), limit=10)
     track(update, context, "mistakes")
@@ -213,11 +233,17 @@ async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
-    """Handle a mode button or a pending mode. Returns True if handled."""
+    """Handle a mode button, an open practice answer, or a pending mode."""
     if text in BUTTONS:
         context.user_data.pop(MODE_KEY, None)
         context.user_data.pop("await_check", None)
         await select_mode(update, context, BUTTONS[text])
+        return True
+    session = context.user_data.get("practice")
+    if isinstance(session, dict) and isinstance(session.get("current"), int):
+        from bot.handlers.practice import submit_practice
+
+        await submit_practice(update, context, text)
         return True
     mode = context.user_data.pop(MODE_KEY, None)
     if context.user_data.pop("await_check", False):
