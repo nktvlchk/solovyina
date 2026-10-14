@@ -24,6 +24,8 @@ EVENT_LABELS = {
     "tts": "озвучка",
     "mistakes": "Мої помилки",
     "review": "повторення",
+    "practice": "тренування",
+    "progress": "прогрес",
     "remember": "запам'ятати",
     "direction": "зміна напряму",
     "delete_data": "видалення даних",

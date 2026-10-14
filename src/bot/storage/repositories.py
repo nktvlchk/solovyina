@@ -97,13 +97,14 @@ class Card:
     reps: int
     lapses: int
     due_at: str
+    source_key: str = ""
 
     @property
     def state(self) -> SrsState:
         return SrsState(self.ease, self.interval_days, self.reps, self.lapses)
 
 
-_CARD_COLUMNS = "id, kind, ask, front, back, note, ease, interval_days, reps, lapses, due_at"
+_CARD_COLUMNS = "id, kind, ask, front, back, note, ease, interval_days, reps, lapses, due_at, source_key"
 
 
 class CardsRepository:
@@ -126,6 +127,7 @@ class CardsRepository:
             reps=int(row["reps"]),
             lapses=int(row["lapses"]),
             due_at=row["due_at"],
+            source_key=row["source_key"],
         )
 
     def get(self, user_id: int, card_id: int) -> Card | None:
@@ -270,6 +272,29 @@ class CardsRepository:
         return self.get(user_id, card_id)
 
 
+class PracticeLogRepository:
+    """Right/wrong results for /practice. The typed answer is not stored."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def record(self, user_id: int, ok: bool, now: dt.datetime | None = None) -> None:
+        self.db.execute(
+            "INSERT INTO practice_log(user_id, ok, created_at) VALUES (?, ?, ?)",
+            (user_id, int(ok), _stamp(now)),
+        )
+
+    def week(self, user_id: int, now: dt.datetime | None = None) -> tuple[int, int]:
+        """(correct, total) since the moment seven days before `now`."""
+        since = _stamp(_as_utc(now) - dt.timedelta(days=7))
+        rows = self.db.query(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(ok), 0) AS good FROM practice_log "
+            "WHERE user_id = ? AND created_at >= ?",
+            (user_id, since),
+        )
+        return int(rows[0]["good"]), int(rows[0]["n"])
+
+
 @dataclass(frozen=True)
 class StoredCorrection:
     id: str
@@ -347,6 +372,29 @@ class CorrectionsRepository:
         )
         return [StoredCorrection(**dict(r)) for r in rows]
 
+    def error_profile(self, user_id: int) -> list[tuple[str, int]]:
+        """Confirmed error types, most frequent first."""
+        rows = self.db.query(
+            "SELECT c.type, COUNT(*) AS n FROM corrections c "
+            "JOIN correction_feedback f ON f.correction_id = c.id "
+            "WHERE c.user_id = ? AND f.user_id = ? AND f.verdict = ? "
+            "GROUP BY c.type ORDER BY n DESC, c.type",
+            (user_id, user_id, Verdict.ERROR.value),
+        )
+        return [(row["type"], row["n"]) for row in rows]
+
+    def types_by_card(self, user_id: int, cards: list[Card]) -> dict[int, str]:
+        keys = [card.source_key for card in cards if card.kind == "mistake"]
+        if not keys:
+            return {}
+        marks = ", ".join("?" for _ in keys)
+        rows = self.db.query(
+            f"SELECT id, type FROM corrections WHERE user_id = ? AND id IN ({marks})",
+            (user_id, *keys),
+        )
+        by_key = {row["id"]: row["type"] for row in rows}
+        return {card.id: by_key[card.source_key] for card in cards if card.source_key in by_key}
+
     def quality_summary(self) -> list[dict]:
         """Aggregate quality by model / prompt version / type (admin only)."""
         rows = self.db.query(
@@ -411,6 +459,7 @@ class PrivacyRepository:
             ("corrections", "user_id"),
             ("saved_words", "user_id"),
             ("cards", "user_id"),
+            ("practice_log", "user_id"),
             ("user_settings", "user_id"),
         ):
             rows = self.db.query(f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = ?", (user_id,))
@@ -426,6 +475,7 @@ class PrivacyRepository:
                 ("DELETE FROM corrections WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM saved_words WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM cards WHERE user_id = ?", (user_id,)),
+                ("DELETE FROM practice_log WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM user_settings WHERE user_id = ?", (user_id,)),
             ]
         )
@@ -444,6 +494,7 @@ class PrivacyRepository:
                 ("DELETE FROM corrections WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM saved_words WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM metrics_daily WHERE day < date('now', ?)", (cutoff,)),
+                ("DELETE FROM practice_log WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM cards WHERE updated_at < datetime('now', ?)", (cutoff,)),
                 (
                     "DELETE FROM cards WHERE kind = 'mistake' "
@@ -481,6 +532,8 @@ class AnalyticsRepository:
             "rate_limited",
             "review",
             "remember",
+            "practice",
+            "progress",
         }
     )
     DETAILS = frozenset(
