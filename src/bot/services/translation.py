@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 
 from bot.language import Direction, Lang
+from bot.models.explanation import ExplanationParseError, WordExplanation, parse_explanation
 from bot.models.translation import (
     DictionaryEntry,
     Source,
@@ -36,6 +37,14 @@ logger = logging.getLogger(__name__)
 
 class TranslationUnavailable(Exception):
     """No provider could produce a translation."""
+
+
+class ExplanationUnavailable(Exception):
+    """No model-backed Ukrainian dictionary explanation is available."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
 
 
 @dataclass
@@ -314,3 +323,22 @@ class TranslationService:
         if result is None:
             raise TranslationUnavailable()
         return result
+
+    async def explain_word(self, word: str, user_id: int | None = None) -> WordExplanation:
+        """Explain a word in Ukrainian instead of translating it into Russian."""
+        if self.llm is None or self.llm_budget is None or not hasattr(self.llm, "explain_word"):
+            raise ExplanationUnavailable("disabled")
+        if not await self.llm_budget.try_consume(user_id):
+            raise ExplanationUnavailable("budget")
+        started = time.monotonic()
+        try:
+            raw = await self.llm.explain_word(word)
+        except ProviderError:
+            self._metric("provider_error.llm")
+            raise ExplanationUnavailable("provider") from None
+        self._metric("source.llm", int((time.monotonic() - started) * 1000))
+        try:
+            return parse_explanation(raw, word)
+        except ExplanationParseError:
+            self._metric("provider_error.llm_parse")
+            raise ExplanationUnavailable("parse") from None

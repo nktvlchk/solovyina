@@ -52,18 +52,19 @@ did I get wrong".
 | Feedback per correction | stored with model name and prompt version, re-voting allowed, no duplicates |
 | "Мої помилки" (`/mistakes`) | corrections you confirmed as errors |
 | Review cards (`/review`) | Anki-like again / hard / good / easy. Deck = confirmed mistakes + words saved with 📌 or `/remember` |
-| "Поясни слово" | dictionary entry, part of speech, Wiktionary definitions, stress/IPA, example |
+| "Поясни слово" (`/explain`) | Ukrainian dictionary-style definition of a word or short expression, with part of speech, stress, example and synonyms; never a Russian translation |
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
 | Product analytics | `/stats [days]` for `ADMIN_IDS`: active/new/returning users, actions by feature, translation sources, share of "error / not an error / style" ratings, quality per model and prompt version; `/export_stats` sends a CSV of pseudonymous events for 30 days |
 
-Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/mistakes`, `/review`,
-`/remember`, `/direction`, `/privacy`, `/delete_my_data`, `/about`, `/stats` (admin).
+Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/explain`, `/mistakes`,
+`/review`, `/remember`, `/direction`, `/privacy`, `/delete_my_data`, `/about`,
+`/stats` (admin).
 
 **In group chats** the bot stays silent unless asked: it ignores ordinary
 messages and answers only `/tr` (translate the text after the command, or the
-message you reply to), `/check` and `/say`. The optional `drip.py` worker can
+message you reply to), `/check`, `/say` and `/explain`. The optional `drip.py` worker can
 post study cards into the same group once a day, at a time drawn at random
 inside a daily window.
 
@@ -126,7 +127,7 @@ PYTHONPATH=src python -m bot
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | **yes** | — | from @BotFather |
-| `ANTHROPIC_API_KEY` | no (recommended) | — | Claude: main translator, `/check`, "Як сказати?" |
+| `ANTHROPIC_API_KEY` | no (recommended) | — | Claude: main translator, `/check`, `/explain`, "Як сказати?" |
 | `GOOGLE_TRANSLATE_API_KEY` | no | — | official Google Cloud Translation API as fallback |
 | `REDIRECT_TO_BOT` | no | — | redirect mode for a retired bot: answers everything with "moved to @…" |
 | `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | model name (stored with each correction) |

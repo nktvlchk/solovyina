@@ -54,9 +54,10 @@ class FakeMyMemory:
 class FakeLLM:
     model = "fake-model"
 
-    def __init__(self, translate="", check="", phrase="", fail=False, auto=""):
+    def __init__(self, translate="", check="", phrase="", fail=False, auto="", explain=""):
         self._translate, self._check, self._phrase, self.fail = translate, check, phrase, fail
         self._auto = auto
+        self._explain = explain
         self.calls: list[str] = []
 
     async def translate(self, text, source, target):
@@ -76,6 +77,12 @@ class FakeLLM:
         if self.fail:
             raise ProviderError("anthropic", "APIError")
         return self._phrase
+
+    async def explain_word(self, word):
+        self.calls.append("explain")
+        if self.fail:
+            raise ProviderError("anthropic", "APIError")
+        return self._explain
 
     async def check(self, text):
         self.calls.append("check")

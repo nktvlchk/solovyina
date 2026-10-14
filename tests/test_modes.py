@@ -5,6 +5,18 @@ from bot.handlers import translation as th
 from bot.models.correction import Verdict
 from tests.conftest import FakeLLM, FakeMyMemory, make_context, make_update
 
+EXPLANATION = json.dumps(
+    {
+        "word": "кіт",
+        "part_of_speech": "іменник",
+        "stress": "кі́т",
+        "definitions": ["Свійська тварина родини котових."],
+        "example": "Кіт спить на дивані.",
+        "synonyms": ["котик"],
+    },
+    ensure_ascii=False,
+)
+
 
 async def test_say_mode_is_one_shot(make_services):
     svc = make_services(llm=FakeLLM(phrase="Як справи?"), ANTHROPIC_API_KEY="k")
@@ -35,12 +47,60 @@ async def test_check_button_routes_next_message(make_services):
 
 
 async def test_explain_word(make_services):
-    svc = make_services()
+    svc = make_services(llm=FakeLLM(explain=EXPLANATION), ANTHROPIC_API_KEY="k")
     ctx = make_context(svc)
     await th.on_text(make_update("📖 Поясни слово"), ctx)
     update = make_update("кіт")
     await th.on_text(update, ctx)
-    assert "кот" in update.effective_message.sent[-1]["text"]
+    text = update.effective_message.sent[-1]["text"]
+    assert "Свійська тварина" in text
+    assert "Кіт спить" in text
+    assert "іменник" in text
+    assert "кот</" not in text
+    assert svc.analytics.export_rows()[-1]["event"] == "explain"
+
+
+async def test_explain_command(make_services):
+    svc = make_services(llm=FakeLLM(explain=EXPLANATION), ANTHROPIC_API_KEY="k")
+    update = make_update("/explain кіт")
+    await modes.cmd_explain(update, make_context(svc))
+    assert "Свійська тварина" in update.effective_message.sent[-1]["text"]
+
+
+async def test_explain_short_expression(make_services):
+    explanation = json.dumps(
+        {
+            "word": "ласий на гроші",
+            "part_of_speech": "стійкий вислів",
+            "stress": "",
+            "definitions": ["Той, хто надмірно прагне грошей."],
+            "example": "Він був ласий на легкі гроші.",
+            "synonyms": ["жадібний"],
+        },
+        ensure_ascii=False,
+    )
+    svc = make_services(llm=FakeLLM(explain=explanation), ANTHROPIC_API_KEY="k")
+    update = make_update("/explain ласий на гроші")
+    await modes.cmd_explain(update, make_context(svc))
+    text = update.effective_message.sent[-1]["text"]
+    assert "надмірно прагне грошей" in text
+    assert "Жадный" not in text
+
+
+async def test_explain_never_falls_back_to_russian_translation(make_services):
+    svc = make_services()
+    update = make_update("/explain кіт")
+    await modes.cmd_explain(update, make_context(svc))
+    text = update.effective_message.sent[-1]["text"]
+    assert "вимкнене" in text
+    assert "кот" not in text
+
+
+async def test_explain_rejects_long_text(make_services):
+    update = make_update("/explain це надто довгий текст який вже не є коротким словниковим висловом")
+    await modes.cmd_explain(update, make_context(make_services()))
+    text = update.effective_message.sent[-1]["text"]
+    assert "до 8 слів" in text and "/tr" in text
 
 
 async def test_my_mistakes_lists_only_confirmed(make_services):
