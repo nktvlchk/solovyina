@@ -47,7 +47,7 @@ def test_main_bot_in_groups_only_explicit_commands():
         if isinstance(handler, CommandHandler):
             text = repr(handler.filters).upper()
             assert "PRIVATE" in text, handler
-            assert ("GROUP" in text) == bool(handler.commands & {"check", "say", "tr", "del"}), (
+            assert ("GROUP" in text) == bool(handler.commands & {"check", "say", "tr", "explain", "del"}), (
                 handler.commands
             )
         elif isinstance(handler, MessageHandler):

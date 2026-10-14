@@ -20,9 +20,8 @@ from telegram.ext import ContextTypes
 
 from bot.formatting import esc, esc_line
 from bot.handlers.util import command_text, is_private, reply_html, services, track, user_id
-from bot.language import Direction, Lang, detect_language
 from bot.models.translation import SOURCE_LABELS
-from bot.services.translation import TranslationUnavailable
+from bot.services.translation import ExplanationUnavailable, TranslationUnavailable
 
 SAY, CHECK, EXPLAIN, MISTAKES, REVIEW, REMEMBER = (
     "say",
@@ -46,7 +45,7 @@ BUTTONS = {
 PROMPTS = {
     SAY: "💬 Надішліть фразу російською або змішану — підкажу природний український варіант.",
     CHECK: "✍️ Надішліть текст українською — перевірю й поясню до трьох головних помилок.",
-    EXPLAIN: "📖 Надішліть одне слово — покажу значення, наголос, приклад і озвучку.",
+    EXPLAIN: "📖 Надішліть слово або короткий вислів — поясню значення українською.",
     REMEMBER: "📌 Надішліть слово або фразу — перекладу і додам картку для повторення.",
 }
 
@@ -88,6 +87,23 @@ async def cmd_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await show_mistakes(update, context)
 
 
+async def cmd_explain(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = command_text(update)
+    reply_to = update.effective_message.reply_to_message
+    if not text and reply_to is not None:
+        text = (reply_to.text or reply_to.caption or "").strip()
+    if not text and not is_private(update):
+        await update.effective_message.reply_text(
+            "📖 Напишіть слово або короткий вислів після команди: /explain ласий на гроші\n"
+            "Або відповідайте командою /explain на повідомлення."
+        )
+        return
+    if not text:
+        await select_mode(update, context, EXPLAIN)
+        return
+    await run_explain(update, context, text)
+
+
 async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     from bot.handlers.translation import guard
 
@@ -116,19 +132,66 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
 
 
 async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
-    from bot.handlers.translation import _translate_and_reply, guard
+    from bot.handlers.review import attach_actions
+    from bot.handlers.translation import guard
+    from bot.services.review import ASK_MEAN
 
-    if len(text.split()) != 1:
-        await update.effective_message.reply_text("📖 Надішліть, будь ласка, одне слово.")
+    if len(text) > 120 or len(text.split()) > 8:
+        await update.effective_message.reply_text(
+            "📖 Надішліть одне слово або короткий вислів (до 8 слів). "
+            "Для перекладу довшого тексту використайте /tr."
+        )
         return
     if not await guard(update, context, text):
         return
     svc = services(context)
-    detection = detect_language(text, svc.dictionary.has_uk, svc.dictionary.has_ru)
-    # A learner usually asks about a Ukrainian word; Russian words get the Ukrainian equivalent.
-    direction = Direction.RU_UK if detection.lang is Lang.RU else Direction.UK_RU
-    track(update, context, "explain", chars=len(text))
-    await _translate_and_reply(update, context, text, direction, detected=True)
+    started = time.monotonic()
+    try:
+        async with svc.concurrency():
+            result = await svc.translation.explain_word(text, user_id(update))
+    except ExplanationUnavailable as exc:
+        messages = {
+            "disabled": "🔒 Словникове пояснення зараз вимкнене: не налаштовано мовну модель.",
+            "budget": "⏳ Денний ліміт пояснень вичерпано. Спробуйте завтра.",
+            "parse": "😔 Не вдалося скласти надійне словникове пояснення. Спробуйте ще раз.",
+            "provider": "😔 Сервіс пояснень зараз недоступний. Спробуйте пізніше.",
+        }
+        track(update, context, "explain", ok=False, chars=len(text), detail="unavailable")
+        await update.effective_message.reply_text(messages.get(exc.reason, messages["provider"]))
+        return
+    elapsed = int((time.monotonic() - started) * 1000)
+    svc.metrics.incr("requests.explain", elapsed)
+    track(
+        update,
+        context,
+        "explain",
+        source="llm",
+        ok=True,
+        latency_ms=elapsed,
+        chars=len(text),
+    )
+    heading = f"📖 <b>{esc_line(result.word)}</b>"
+    if result.part_of_speech:
+        heading += f" · <i>{esc_line(result.part_of_speech)}</i>"
+    lines = [heading]
+    if result.stress:
+        lines.append(f"Наголос: <b>{esc_line(result.stress)}</b>")
+    lines.append("")
+    lines.extend(f"{index}. {esc(definition)}" for index, definition in enumerate(result.definitions, 1))
+    lines += ["", f"💬 <i>{esc_line(result.example)}</i>"]
+    if result.synonyms:
+        lines.append(f"🔹 Синоніми: {esc(', '.join(result.synonyms))}")
+    lines += ["", "<i>Пояснення: мовна модель (може помилятися)</i>"]
+    definition = "; ".join(result.definitions)
+    markup = attach_actions(
+        svc,
+        tts_text=result.word,
+        ask=ASK_MEAN,
+        front=result.word,
+        back=definition,
+        note=result.example,
+    )
+    await reply_html(update.effective_message, "\n".join(lines), reply_markup=markup)
 
 
 async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
