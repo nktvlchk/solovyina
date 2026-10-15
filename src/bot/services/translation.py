@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from bot.language import Direction, Lang
 from bot.models.explanation import ExplanationParseError, WordExplanation, parse_explanation
+from bot.models.picture import PictureParseError, PictureReading, parse_picture
 from bot.models.translation import (
     DictionaryEntry,
     Source,
@@ -41,6 +42,14 @@ class TranslationUnavailable(Exception):
 
 class ExplanationUnavailable(Exception):
     """No model-backed Ukrainian dictionary explanation is available."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class PictureUnavailable(Exception):
+    """The image could not be read by the model."""
 
     def __init__(self, reason: str):
         self.reason = reason
@@ -342,3 +351,28 @@ class TranslationService:
         except ExplanationParseError:
             self._metric("provider_error.llm_parse")
             raise ExplanationUnavailable("parse") from None
+
+    async def describe_image(
+        self,
+        image: bytes,
+        media_type: str,
+        caption: str = "",
+        user_id: int | None = None,
+    ) -> PictureReading:
+        """Read one image. The bytes are sent to the model and then discarded."""
+        if self.llm is None or self.llm_budget is None or not hasattr(self.llm, "describe_image"):
+            raise PictureUnavailable("disabled")
+        if not await self.llm_budget.try_consume(user_id):
+            raise PictureUnavailable("budget")
+        started = time.monotonic()
+        try:
+            raw = await self.llm.describe_image(image, media_type, caption)
+        except ProviderError:
+            self._metric("provider_error.llm")
+            raise PictureUnavailable("provider") from None
+        self._metric("source.llm", int((time.monotonic() - started) * 1000))
+        try:
+            return parse_picture(raw)
+        except PictureParseError:
+            self._metric("provider_error.llm_parse")
+            raise PictureUnavailable("parse") from None

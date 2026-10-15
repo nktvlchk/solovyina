@@ -57,6 +57,7 @@ did I get wrong".
 | Review cards (`/review`) | Anki-like again / hard / good / easy. Deck = confirmed mistakes + words saved with 📌 or `/remember` |
 | Practice (`/practice`, `/progress`) | Up to five typed answers from cards that are due, ordered toward frequent error types. The log stores only right/wrong |
 | "Поясни слово" (`/explain`) | Ukrainian dictionary-style definition of a word or short expression, with part of speech, stress, example and synonyms; never a Russian translation |
+| Photo in a private chat | Claude reads one image and explains the Ukrainian words on it. The file and caption are not stored |
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
