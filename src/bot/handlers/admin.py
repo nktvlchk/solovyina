@@ -19,6 +19,7 @@ EVENT_LABELS = {
     "translate": "переклад",
     "say": "Як сказати?",
     "explain": "Поясни слово",
+    "photo": "фото",
     "check": "перевірка /check",
     "feedback": "оцінка виправлення",
     "tts": "озвучка",

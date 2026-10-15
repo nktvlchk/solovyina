@@ -523,6 +523,7 @@ class AnalyticsRepository:
             "translate",
             "say",
             "explain",
+            "photo",
             "check",
             "feedback",
             "tts",

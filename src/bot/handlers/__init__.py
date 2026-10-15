@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers import admin, common, correction, feedback, modes, practice, review, translation
+from bot.handlers import admin, common, correction, feedback, modes, picture, practice, review, translation
 
 logger = logging.getLogger(__name__)
 
@@ -60,5 +60,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(review.on_remember_callback, pattern=r"^mem:"))
     app.add_handler(CallbackQueryHandler(practice.on_practice_callback, pattern=r"^pr:"))
 
+    app.add_handler(MessageHandler(PRIVATE & filters.PHOTO, picture.on_photo))
     app.add_handler(MessageHandler(PRIVATE & filters.TEXT & ~filters.COMMAND, translation.on_text))
     app.add_error_handler(on_error)

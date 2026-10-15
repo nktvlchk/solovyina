@@ -54,11 +54,14 @@ class FakeMyMemory:
 class FakeLLM:
     model = "fake-model"
 
-    def __init__(self, translate="", check="", phrase="", fail=False, auto="", explain=""):
+    def __init__(self, translate="", check="", phrase="", fail=False, auto="", explain="", image=""):
         self._translate, self._check, self._phrase, self.fail = translate, check, phrase, fail
         self._auto = auto
         self._explain = explain
+        self._image = image
         self.calls: list[str] = []
+        self.seen_image = b""
+        self.seen_caption = ""
 
     async def translate(self, text, source, target):
         self.calls.append("translate")
@@ -83,6 +86,14 @@ class FakeLLM:
         if self.fail:
             raise ProviderError("anthropic", "APIError")
         return self._explain
+
+    async def describe_image(self, image, media_type, caption=""):
+        self.calls.append("image")
+        self.seen_image = bytes(image)
+        self.seen_caption = caption
+        if self.fail or media_type != "image/jpeg":
+            raise ProviderError("anthropic", "APIError")
+        return self._image
 
     async def check(self, text):
         self.calls.append("check")
