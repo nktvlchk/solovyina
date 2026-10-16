@@ -92,12 +92,43 @@ Railway setup: a second service from this repository with
   warning if it is still set.
 
 The deck is re-downloaded before every send, so editing the gist updates the
-cards without a redeploy. Cards are scheduled by their position: card *i* is
-introduced `i` days after `DRIP_START`, so append new cards to the end and the
-existing schedule does not shift. Moving `DRIP_START` back by *n* days is how
-you skip the first *n* cards — useful after a change of cadence, to carry on
-where the previous schedule had got to instead of starting the deck again. The chat ID is
+cards without a redeploy. `DRIP_DECK_URL` must be the raw file without a
+revision hash (`.../raw/deck.md`). A URL that contains `/raw/<sha>/` keeps
+serving the old file.
+
+Cards are scheduled by their position: card *i* is introduced `i` days after
+`DRIP_START`. Moving `DRIP_START` back by *n* days is how you skip the first
+*n* cards — useful after a change of cadence, to carry on where the previous
+schedule had got to instead of starting the deck again. The chat ID is
 configuration, never code.
+
+### Lessons from the class chat
+
+When `GITHUB_TOKEN` and `DECK_GIST_ID` are set on the **bot** service (not only
+on the drip worker), an admin can send `/learn` plus the lesson text, a photo,
+or a PDF in a private chat. The model drafts cards, the code checks them
+(Ukrainian only, a vocabulary card has one to five items, ids and emoji are
+added by the code) and inserts them at tomorrow's position. Cards that have
+already been introduced stay on their days. Cards that have not gone out yet
+move later by the size of the batch. If the draft is unusable, the gist is
+left untouched.
+
+The same thing happens on its own when a user listed in `TEACHER_IDS` posts in
+`DRIP_CHAT_ID`. Only a word, a short word list, or a rule becomes cards.
+Greetings and ordinary chat are ignored, and a word or rule already in the
+deck is not added again. A vocabulary card holds one to five words, never
+padded. The bot does not answer in the class chat. It sends a short note to
+each `ADMIN_IDS` user only when cards were actually added.
+`/deck` shows the current day and the last batch. `/deck_undo` removes that
+batch.
+
+Telegram only delivers ordinary group messages to a bot that is an admin of
+the group, or whose privacy mode is disabled in BotFather (`/setprivacy`).
+Without that, the teacher can post and the bot will not see it.
+
+Set `DRIP_START` and `DRIP_TZ` on the bot service to the same values as the
+drip worker. The token needs the GitHub **gist** scope only. The lesson text
+is not stored; SQLite keeps the ids of the last batch so undo can find them.
 
 ## Build note
 

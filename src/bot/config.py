@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DICTIONARY = PROJECT_ROOT / "data" / "dictionary.tsv"
@@ -50,6 +53,46 @@ def _admin_ids(raw: str | None) -> frozenset[int]:
     return frozenset(ids)
 
 
+def _gist_id(raw: str | None) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if not re.fullmatch(r"[0-9a-fA-F]{20,64}", value):
+        raise ConfigError("DECK_GIST_ID must be the hex id of a GitHub gist")
+    return value
+
+
+def _gist_file(raw: str | None) -> str:
+    value = (raw or "").strip() or "deck.md"
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", value):
+        raise ConfigError("DECK_GIST_FILE must be a plain file name")
+    return value
+
+
+def _chat_id(raw: str | None) -> str:
+    value = (raw or "").strip()
+    if value and not re.fullmatch(r"-?\d+", value):
+        raise ConfigError("DRIP_CHAT_ID must be a numeric Telegram chat id")
+    return value
+
+
+def _date(name: str, raw: str | None) -> date:
+    value = (raw or "").strip() or "2026-10-08"
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ConfigError(f"{name} must be YYYY-MM-DD") from None
+
+
+def _timezone(raw: str | None) -> str:
+    value = (raw or "").strip() or "Europe/Lisbon"
+    try:
+        ZoneInfo(value)
+    except ZoneInfoNotFoundError:
+        raise ConfigError("DRIP_TZ must be an IANA timezone like Europe/Lisbon") from None
+    return value
+
+
 def _bot_username(raw: str | None) -> str | None:
     if not raw or not raw.strip():
         return None
@@ -79,6 +122,13 @@ class Settings:
     http_timeout_seconds: float = 8.0
     retention_days: int = 180
     redirect_to_bot: str | None = None
+    github_token: str | None = field(default=None, repr=False)
+    deck_gist_id: str = ""
+    deck_gist_file: str = "deck.md"
+    teacher_ids: frozenset[int] = frozenset()
+    drip_chat_id: str = ""
+    drip_start: date = date(2026, 10, 8)
+    drip_tz: str = "Europe/Lisbon"
 
     @property
     def llm_enabled(self) -> bool:
@@ -99,6 +149,10 @@ class Settings:
         log_level = (env.get("LOG_LEVEL") or "INFO").strip().upper()
         if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ConfigError("LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL")
+        github_token = (env.get("GITHUB_TOKEN") or "").strip() or None
+        deck_gist_id = _gist_id(env.get("DECK_GIST_ID"))
+        if bool(github_token) != bool(deck_gist_id):
+            raise ConfigError("GITHUB_TOKEN and DECK_GIST_ID must both be set, or both left empty")
 
         return cls(
             telegram_bot_token=token,
@@ -120,4 +174,11 @@ class Settings:
             max_concurrent_requests=_int("MAX_CONCURRENT_REQUESTS", env.get("MAX_CONCURRENT_REQUESTS"), 8, 1),
             retention_days=_int("RETENTION_DAYS", env.get("RETENTION_DAYS"), 180, 1),
             redirect_to_bot=_bot_username(env.get("REDIRECT_TO_BOT")),
+            github_token=github_token,
+            deck_gist_id=deck_gist_id,
+            deck_gist_file=_gist_file(env.get("DECK_GIST_FILE")),
+            teacher_ids=_admin_ids(env.get("TEACHER_IDS")),
+            drip_chat_id=_chat_id(env.get("DRIP_CHAT_ID")),
+            drip_start=_date("DRIP_START", env.get("DRIP_START")),
+            drip_tz=_timezone(env.get("DRIP_TZ")),
         )

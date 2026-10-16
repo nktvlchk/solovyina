@@ -151,8 +151,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text or not has_real_user(update):
         return
 
-    # Mode buttons and one-shot modes (/check, /say, Поясни слово)
-    from bot.handlers.modes import dispatch
+    from bot.handlers.ingest import LEARN_KEY, ingest_private_text
+    from bot.handlers.modes import BUTTONS, dispatch
+
+    if text in BUTTONS:
+        context.user_data.pop(LEARN_KEY, None)
+    elif context.user_data.pop(LEARN_KEY, None):
+        await ingest_private_text(update, context, text)
+        return
 
     if await dispatch(update, context, text):
         return

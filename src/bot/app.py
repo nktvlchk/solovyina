@@ -24,6 +24,7 @@ from bot.storage.repositories import (
     AnalyticsRepository,
     CardsRepository,
     CorrectionsRepository,
+    DeckBatchRepository,
     MetricsRepository,
     PracticeLogRepository,
     PrivacyRepository,
@@ -75,6 +76,22 @@ class Services:
     analytics: AnalyticsRepository | None = None
     text_cache: TextCache = field(default_factory=TextCache)
     http_client: object = None
+    deck: object = None
+
+
+def _deck_editor(settings: Settings, db: Database):
+    if not settings.github_token or not settings.deck_gist_id:
+        return None
+    from zoneinfo import ZoneInfo
+
+    from bot.services.deck import DeckEditor, GistDeck
+
+    return DeckEditor(
+        GistDeck(settings.github_token, settings.deck_gist_id, settings.deck_gist_file),
+        DeckBatchRepository(db),
+        settings.drip_start,
+        ZoneInfo(settings.drip_tz),
+    )
 
 
 def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None, google=None) -> Services:
@@ -125,6 +142,7 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None,
         concurrency=ConcurrencyLimiter(settings.max_concurrent_requests),
         http_client=client,
         analytics=AnalyticsRepository(db),
+        deck=_deck_editor(settings, db),
     )
 
 

@@ -52,7 +52,11 @@ def test_main_bot_in_groups_only_explicit_commands():
             )
         elif isinstance(handler, MessageHandler):
             text = repr(handler.filters).upper()
-            assert "PRIVATE" in text and "GROUP" not in text
+            # The class-chat watcher is the only group handler, and it does not reply there.
+            if "GROUP" in text:
+                assert "PRIVATE" not in text
+            else:
+                assert "PRIVATE" in text and "GROUP" not in text
 
 
 def test_command_text_keeps_line_breaks():
