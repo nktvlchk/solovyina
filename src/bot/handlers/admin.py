@@ -27,6 +27,7 @@ EVENT_LABELS = {
     "review": "повторення",
     "practice": "тренування",
     "progress": "прогрес",
+    "deck": "колода уроків",
     "remember": "запам'ятати",
     "direction": "зміна напряму",
     "delete_data": "видалення даних",

@@ -64,6 +64,11 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     photos = getattr(message, "photo", None) if message is not None else None
     if not photos or not has_real_user(update):
         return
+    from bot.handlers.ingest import LEARN_KEY, ingest_private_photo
+
+    if context.user_data.pop(LEARN_KEY, None):
+        await ingest_private_photo(update, context)
+        return
     group_id = getattr(message, "media_group_id", None)
     if group_id and _remember_album(context, group_id):
         return

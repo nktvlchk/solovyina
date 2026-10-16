@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -295,6 +296,37 @@ class PracticeLogRepository:
         return int(rows[0]["good"]), int(rows[0]["n"])
 
 
+class DeckBatchRepository:
+    """Ids of the last cards added to the class deck. No lesson text."""
+
+    KEY = "deck_last_batch"
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self) -> list[str]:
+        rows = self.db.query("SELECT value FROM meta WHERE key = ?", (self.KEY,))
+        if not rows:
+            return []
+        try:
+            data = json.loads(rows[0]["value"])
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
+            return []
+        return data
+
+    def set(self, ids: list[str]) -> None:
+        self.db.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (self.KEY, json.dumps(ids)),
+        )
+
+    def clear(self) -> None:
+        self.db.execute("DELETE FROM meta WHERE key = ?", (self.KEY,))
+
+
 @dataclass(frozen=True)
 class StoredCorrection:
     id: str
@@ -535,6 +567,7 @@ class AnalyticsRepository:
             "remember",
             "practice",
             "progress",
+            "deck",
         }
     )
     DETAILS = frozenset(
@@ -562,6 +595,7 @@ class AnalyticsRepository:
             "exists",
             "empty",
             "done",
+            "undo",
         }
     )
 

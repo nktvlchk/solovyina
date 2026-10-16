@@ -13,13 +13,25 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers import admin, common, correction, feedback, modes, picture, practice, review, translation
+from bot.handlers import (
+    admin,
+    common,
+    correction,
+    feedback,
+    ingest,
+    modes,
+    picture,
+    practice,
+    review,
+    translation,
+)
 
 logger = logging.getLogger(__name__)
 
-# Private chats get everything. In groups (e.g. a class chat where the same
-# bot posts study cards) the bot stays silent unless asked: only /tr, /check,
-# /say, /explain and the admin-only /del work; ordinary messages are never processed.
+# Private chats get everything. In groups the bot stays silent unless asked:
+# only /tr, /check, /say, /explain and the admin-only /del get a reply.
+# One extra handler watches the class chat for the teacher's lessons and
+# updates the deck without sending anything back into that chat.
 PRIVATE = filters.ChatType.PRIVATE
 ANY_CHAT = filters.ChatType.PRIVATE | filters.ChatType.GROUPS
 
@@ -51,6 +63,9 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("remember", review.cmd_remember, filters=PRIVATE))
     app.add_handler(CommandHandler("stats", admin.cmd_stats, filters=PRIVATE))
     app.add_handler(CommandHandler("export_stats", admin.cmd_export_stats, filters=PRIVATE))
+    app.add_handler(CommandHandler("learn", ingest.cmd_learn, filters=PRIVATE))
+    app.add_handler(CommandHandler("deck", ingest.cmd_deck, filters=PRIVATE))
+    app.add_handler(CommandHandler("deck_undo", ingest.cmd_deck_undo, filters=PRIVATE))
 
     app.add_handler(CallbackQueryHandler(common.on_delete_callback, pattern=r"^del:"))
     app.add_handler(CallbackQueryHandler(translation.on_direction_callback, pattern=r"^dir[01]:"))
@@ -61,5 +76,14 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(practice.on_practice_callback, pattern=r"^pr:"))
 
     app.add_handler(MessageHandler(PRIVATE & filters.PHOTO, picture.on_photo))
+    app.add_handler(MessageHandler(PRIVATE & filters.Document.ALL, ingest.on_private_document))
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS
+            & (filters.TEXT | filters.PHOTO | filters.Document.ALL)
+            & ~filters.COMMAND,
+            ingest.on_class_message,
+        )
+    )
     app.add_handler(MessageHandler(PRIVATE & filters.TEXT & ~filters.COMMAND, translation.on_text))
     app.add_error_handler(on_error)

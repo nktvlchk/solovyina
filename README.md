@@ -58,6 +58,7 @@ did I get wrong".
 | Practice (`/practice`, `/progress`) | Up to five typed answers from cards that are due, ordered toward frequent error types. The log stores only right/wrong |
 | "Поясни слово" (`/explain`) | Ukrainian dictionary-style definition of a word or short expression, with part of speech, stress, example and synonyms; never a Russian translation |
 | Photo in a private chat | Claude reads one image and explains the Ukrainian words on it. The file and caption are not stored |
+| Class deck (`/learn`, teacher posts) | A teacher's message in the class chat, or `/learn` in private, becomes checked cards in the private gist. The bot does not reply in the class chat |
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
