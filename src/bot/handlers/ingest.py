@@ -16,7 +16,7 @@ from telegram.ext import ContextTypes
 from bot.handlers.admin import is_admin
 from bot.handlers.util import has_real_user, reply_html, services, track, user_id
 from bot.services.deck import DeckError
-from bot.services.lesson_cards import MIN_CLASS_TEXT, LessonUnavailable, request_drafts
+from bot.services.lesson_cards import LessonUnavailable, looks_like_lesson, request_drafts
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,8 @@ _TELL = {
     "parse": "😔 Не вдалося зібрати надійні картки. Деку не змінював.",
     "provider": "😔 Сервіс зараз недоступний. Деку не змінював.",
     "deck": "😔 Деку зараз не вдалося оновити. Спробуйте ще раз.",
+    "nothing": "Тут немає окремого слова чи правила. Деку не змінював.",
+    "known": "Це вже є в деці. Нічого не додавав.",
     "download": "Не вдалося завантажити файл. Деку не змінював.",
     "big": "Файл завеликий. Деку не змінював.",
 }
@@ -92,6 +94,10 @@ async def _publish(update: Update, context: ContextTypes.DEFAULT_TYPE, drafts, *
         track(update, context, "deck", ok=False, detail="error")
         await _tell(update, context, _TELL["deck"], private=private)
         return
+    if added is None:
+        if private:
+            await _tell(update, context, _TELL["known"], private=True)
+        return
     track(update, context, "deck", ok=True, detail="saved")
     logger.info("deck added %s cards at index %s", len(added.ids), added.index)
     await _tell(update, context, _ready(len(added.ids), added.ids, added.first_day), private=private)
@@ -126,6 +132,10 @@ async def _from_model(
     except LessonUnavailable as exc:
         track(update, context, "deck", ok=False, detail="unavailable" if exc.reason != "parse" else "error")
         await _tell(update, context, _TELL.get(exc.reason, _TELL["provider"]), private=private)
+        return
+    if not drafts:
+        if private:
+            await _tell(update, context, _TELL["nothing"], private=True)
         return
     await _publish(update, context, drafts, private=private)
 
@@ -189,7 +199,7 @@ async def cmd_learn(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text:
         context.user_data[LEARN_KEY] = True
         await update.effective_message.reply_text(
-            "Надішліть текст уроку, фото конспекту або PDF. З цього вийдуть картки для розсилки."
+            "Надішліть слово, список слів або правило. Звичайні повідомлення з чату в деку не йдуть."
         )
         return
     await ingest_private_text(update, context, text)
@@ -266,7 +276,7 @@ async def _class_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     caption = " ".join((getattr(message, "caption", None) or "").split())[:300]
     text = (getattr(message, "text", None) or "").strip()
     is_pdf = getattr(document, "mime_type", "") == "application/pdf"
-    actionable = bool(photos) or is_pdf or len(text) >= MIN_CLASS_TEXT
+    actionable = bool(photos) or is_pdf or looks_like_lesson(text)
     if not actionable:
         return
     if not svc.rate_limiter.allow(user_id(update)):

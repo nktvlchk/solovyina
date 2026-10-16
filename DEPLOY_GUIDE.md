@@ -107,15 +107,18 @@ configuration, never code.
 When `GITHUB_TOKEN` and `DECK_GIST_ID` are set on the **bot** service (not only
 on the drip worker), an admin can send `/learn` plus the lesson text, a photo,
 or a PDF in a private chat. The model drafts cards, the code checks them
-(Ukrainian only, a vocabulary card has exactly five items, ids and emoji are
+(Ukrainian only, a vocabulary card has one to five items, ids and emoji are
 added by the code) and inserts them at tomorrow's position. Cards that have
 already been introduced stay on their days. Cards that have not gone out yet
 move later by the size of the batch. If the draft is unusable, the gist is
 left untouched.
 
 The same thing happens on its own when a user listed in `TEACHER_IDS` posts in
-`DRIP_CHAT_ID`: a long enough text, a photo, or a PDF. The bot does not answer
-in the class chat. It sends a short note to each `ADMIN_IDS` user in private.
+`DRIP_CHAT_ID`. Only a word, a short word list, or a rule becomes cards.
+Greetings and ordinary chat are ignored, and a word or rule already in the
+deck is not added again. A vocabulary card holds one to five words, never
+padded. The bot does not answer in the class chat. It sends a short note to
+each `ADMIN_IDS` user only when cards were actually added.
 `/deck` shows the current day and the last batch. `/deck_undo` removes that
 batch.
 

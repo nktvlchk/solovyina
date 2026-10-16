@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from bot.services.lesson_cards import Draft, assign_ids
+from bot.services.lesson_cards import Draft, assign_ids, only_new
 from bot.storage.repositories import DeckBatchRepository
 
 
@@ -137,12 +137,15 @@ class DeckEditor:
         self.tz = tz
         self._lock = asyncio.Lock()
 
-    async def add(self, drafts: tuple[Draft, ...], *, today: date | None = None) -> Added:
+    async def add(self, drafts: tuple[Draft, ...], *, today: date | None = None) -> Added | None:
         if not drafts:
-            raise DeckError("empty")
+            return None
         async with self._lock:
             document = await self.store.read()
             cards = load_cards(document)
+            drafts = only_new([card.text for card in cards], drafts)
+            if not drafts:
+                return None
             day = today or datetime.now(self.tz).date()
             index = insertion_index(self.start, day, len(cards))
             fresh = []

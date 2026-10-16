@@ -18,7 +18,35 @@ _TAG_RE = re.compile(r"^[а-яіїєґ0-9-]{1,24}$")
 _ID_RE = re.compile(r"^([RV])(\d+)$")
 
 MAX_CARDS = 12
-MIN_CLASS_TEXT = 40
+_CHATTER = frozenset(
+    {
+        "привіт",
+        "вітаю",
+        "добрий день",
+        "добрий ранок",
+        "доброго ранку",
+        "добрий вечір",
+        "дякую",
+        "спасибі",
+        "ок",
+        "окей",
+        "так",
+        "ні",
+        "добре",
+        "гаразд",
+        "клас",
+        "супер",
+        "гарно",
+        "молодці",
+        "до зустрічі",
+        "до побачення",
+        "на зв'язку",
+        "+",
+        "++",
+    }
+)
+_VOCAB_LINE = re.compile(r"(?m)^\d+\.\s+(.+?)\s+[—–-]\s+")
+_TITLE_LINE = re.compile(r"(?m)^[🧠📚]\s+(?:[A-Za-z]\d+\s+·\s+)?(.+?)\s*$")
 
 
 class LessonRejected(ValueError):
@@ -48,6 +76,48 @@ class VocabDraft:
 
 
 Draft = RuleDraft | VocabDraft
+
+
+def looks_like_lesson(text: str) -> bool:
+    """A lone word or a real message. Greetings and one-word chatter are not lessons."""
+    cleaned = " ".join((text or "").split())
+    if not cleaned:
+        return False
+    folded = cleaned.lower().strip("!?.…, ")
+    if folded in _CHATTER:
+        return False
+    if re.fullmatch(r"https?://\S+", cleaned):
+        return False
+    return re.search(r"[а-яіїєґ]", cleaned, re.IGNORECASE) is not None
+
+
+def _key(value: str) -> str:
+    text = value.lower().replace("\u0301", "").replace("’", "'").replace("ʼ", "'")
+    return " ".join(text.split())
+
+
+def only_new(existing_texts: list[str], drafts: tuple[Draft, ...]) -> tuple[Draft, ...]:
+    """Drop words and rule titles the deck already has. Do not invent replacements."""
+    known_words: set[str] = set()
+    known_titles: set[str] = set()
+    for text in existing_texts:
+        known_words.update(_key(match.group(1)) for match in _VOCAB_LINE.finditer(text))
+        known_titles.update(_key(match.group(1)) for match in _TITLE_LINE.finditer(text))
+    kept: list[Draft] = []
+    for draft in drafts:
+        if isinstance(draft, RuleDraft):
+            title = _key(draft.title)
+            if title in known_titles:
+                continue
+            known_titles.add(title)
+            kept.append(draft)
+            continue
+        items = tuple(item for item in draft.items if _key(item[0]) not in known_words)
+        if not items:
+            continue
+        known_words.update(_key(word) for word, _note in items)
+        kept.append(VocabDraft(draft.title, draft.tag, items))
+    return tuple(kept)
 
 
 def _ukrainian(text: str) -> bool:
@@ -85,8 +155,10 @@ def parse_lesson(raw: str) -> tuple[Draft, ...]:
     except json.JSONDecodeError as exc:
         raise LessonRejected("invalid JSON") from exc
     cards = data.get("cards") if isinstance(data, dict) else None
-    if not isinstance(cards, list) or not 1 <= len(cards) <= MAX_CARDS:
+    if not isinstance(cards, list) or len(cards) > MAX_CARDS:
         raise LessonRejected("card count")
+    if not cards:
+        return ()
     drafts: list[Draft] = []
     for card in cards:
         if not isinstance(card, dict):
@@ -102,8 +174,8 @@ def parse_lesson(raw: str) -> tuple[Draft, ...]:
             draft: Draft = RuleDraft(title, body, wrong, right, tag)
         elif kind == "vocab":
             raw_items = card.get("items")
-            if not isinstance(raw_items, list) or len(raw_items) != 5:
-                raise LessonRejected("vocab needs 5 items")
+            if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 5:
+                raise LessonRejected("vocab needs 1 to 5 items")
             items: list[tuple[str, str]] = []
             for item in raw_items:
                 if not isinstance(item, dict):
