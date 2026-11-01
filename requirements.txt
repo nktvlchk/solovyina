@@ -3,4 +3,4 @@ python-telegram-bot==22.8
 httpx==0.28.1
 gTTS==2.5.4
 python-dotenv==1.2.4
-anthropic==1.13.0
+anthropic==2.3.0
