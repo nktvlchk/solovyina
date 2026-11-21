@@ -109,15 +109,20 @@ def attach_actions(
     front: str = "",
     back: str = "",
     note: str = "",
+    report: InlineKeyboardButton | None = None,
 ) -> InlineKeyboardMarkup | None:
-    """🔊 and 📌 on one row. 🔊 stays first: existing buttons keep their place."""
+    """🔊 and 📌 on one row. 🔊 stays first: existing buttons keep their place.
+    🐞 Помилка, if given, goes on its own row below."""
     row: list[InlineKeyboardButton] = []
     if tts_text and 0 < len(tts_text) <= svc.settings.max_tts_length:
         row.append(InlineKeyboardButton("🔊 Озвучити", callback_data=f"tts:{svc.text_cache.put(tts_text)}"))
     remember = _remember_button(svc, ask, front, back, note)
     if remember is not None:
         row.append(remember)
-    return InlineKeyboardMarkup([row]) if row else None
+    rows = [row] if row else []
+    if report is not None:
+        rows.append([report])
+    return InlineKeyboardMarkup(rows) if rows else None
 
 
 def _kind(card: Card) -> str:

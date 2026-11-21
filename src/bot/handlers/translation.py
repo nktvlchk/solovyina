@@ -191,13 +191,15 @@ async def _auto_translate_and_reply(update: Update, context: ContextTypes.DEFAUL
         latency_ms=elapsed,
         chars=len(text),
     )
+    from bot.handlers.bugs import report_button
     from bot.handlers.review import attach_actions
     from bot.services.review import ASK_MEAN, ASK_SAY
 
     reply = format_phrase(text, result)
     tts_text = result.text if direction is Direction.RU_UK else text
     ask = ASK_SAY if direction is Direction.RU_UK else ASK_MEAN
-    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=text, back=result.text)
+    report = report_button(svc, update, "translate", text, result.source.value)
+    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=text, back=result.text, report=report)
     await reply_html(update.effective_message, reply, reply_markup=markup)
     return True
 
@@ -268,8 +270,11 @@ async def _translate_and_reply(
     if detected and is_private(update):
         label = esc(DIRECTION_LABELS[direction])
         reply += f"\n\n<i>{label}. Закріпити інший напрям: /direction</i>"
+    from bot.handlers.bugs import report_button
+
     ask, front, back, note = sides if sides is not None else ("", "", "", "")
-    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=front, back=back, note=note)
+    report = report_button(svc, update, "translate", text, source or "")
+    markup = attach_actions(svc, tts_text=tts_text, ask=ask, front=front, back=back, note=note, report=report)
     await reply_html(message, reply, reply_markup=markup)
 
 

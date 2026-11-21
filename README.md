@@ -61,11 +61,12 @@ did I get wrong".
 | Audio | gTTS, **only on button press**, generated in memory (no temp files); speech synthesis, not pronunciation assessment |
 | Direction | auto-detection is only a hint; `unknown` → the bot asks; `/direction` pins it |
 | Privacy | `/privacy`, `/delete_my_data`, retention, no names/usernames/message history |
+| "🐞 Помилка" (report a wrong answer) | Button under answers in private chats (translation, "Як сказати?", "Поясни слово", photo, `/check` summary). Pressing it saves the request, the answer as shown, the feature and the source; the bot then asks what exactly is wrong. The next message becomes the comment, or the user presses "Без коментаря" / "Скасувати" (cancel deletes the report). Admin review: `/bugs` (open reports, tap `/done_<id>` to close), `/bugs done`, `/export_bugs` (CSV, no Telegram IDs) |
 | Product analytics | `/stats [days]` for `ADMIN_IDS`: active/new/returning users, actions by feature, translation sources, share of "error / not an error / style" ratings, quality per model and prompt version; `/export_stats` sends a CSV of pseudonymous events for 30 days |
 
 Commands: `/start`, `/help`, `/tr`, `/say`, `/check`, `/explain`, `/mistakes`,
 `/review`, `/practice`, `/progress`, `/remember`, `/direction`, `/privacy`, `/delete_my_data`, `/about`,
-`/stats` (admin).
+`/stats`, `/bugs`, `/export_bugs` (admin).
 
 **In group chats** the bot stays silent unless asked: it ignores ordinary
 messages and answers only `/tr` (translate the text after the command, or the
@@ -138,7 +139,7 @@ PYTHONPATH=src python -m bot
 | `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | model name (stored with each correction) |
 | `LLM_DAILY_LIMIT` | no | `500` | max paid model calls per day (all users) |
 | `LLM_USER_DAILY_LIMIT` | no | `60` | max model calls per user per day (in memory) |
-| `ADMIN_IDS` | no | — | comma-separated Telegram IDs allowed to use `/stats` |
+| `ADMIN_IDS` | no | — | comma-separated Telegram IDs allowed to use `/stats` and `/bugs` |
 | `DATABASE_PATH` | no | `data/runtime/bot.sqlite3` | SQLite file (git-ignored) |
 | `DICTIONARY_PATH` | no | `data/dictionary.tsv` | generated dictionary file |
 | `STORE_RAW_TEXT` | no | `false` | store the full checked text (off by default) |
@@ -167,7 +168,9 @@ provider's variables, never in the repository.
   fragment or word, the answer, and when it is due); a product-analytics
   log of actions (feature, source, direction, success, latency, text length,
   rating) under a salted pseudonymous key, never the Telegram ID or the text;
-  aggregated counters.
+  aggregated counters; reports from the "🐞 Помилка" button (only when it is
+  pressed): the request, the bot's answer and the user's comment — for photos
+  only the answer, never the image or caption.
 * Not stored: names, usernames, message history, full texts (unless
   `STORE_RAW_TEXT=true`).
 * Logs contain no message text (library loggers that could print updates are

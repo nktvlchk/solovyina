@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -105,6 +105,27 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_key);
+
+-- "🐞 Помилка": the user flagged a wrong bot answer. Stored only on that
+-- explicit press: the request, the answer as shown and an optional comment,
+-- so the error can be reviewed later (/bugs). Removed by /delete_my_data
+-- and by retention like everything else.
+CREATE TABLE IF NOT EXISTS bug_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    feature TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    user_text TEXT NOT NULL DEFAULT '',
+    bot_text TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+    message_id INTEGER,
+    bot_version TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_user ON bug_reports(user_id);
 
 -- Aggregated counters only. Never per-user, never message text.
 CREATE TABLE IF NOT EXISTS metrics_daily (
