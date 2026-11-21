@@ -22,6 +22,7 @@ from bot.services.tts import TtsService
 from bot.storage.database import Database
 from bot.storage.repositories import (
     AnalyticsRepository,
+    BugReportsRepository,
     CardsRepository,
     CorrectionsRepository,
     MetricsRepository,
@@ -73,6 +74,7 @@ class Services:
     rate_limiter: RateLimiter
     concurrency: ConcurrencyLimiter
     analytics: AnalyticsRepository | None = None
+    bug_reports: BugReportsRepository | None = None
     text_cache: TextCache = field(default_factory=TextCache)
     http_client: object = None
 
@@ -125,6 +127,7 @@ def build_services(settings: Settings, llm=None, wiktionary=None, mymemory=None,
         concurrency=ConcurrencyLimiter(settings.max_concurrent_requests),
         http_client=client,
         analytics=AnalyticsRepository(db),
+        bug_reports=BugReportsRepository(db),
     )
 
 

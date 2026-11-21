@@ -406,6 +406,128 @@ class CorrectionsRepository:
         return [dict(r) for r in rows]
 
 
+@dataclass(frozen=True)
+class BugReport:
+    id: int
+    user_id: int
+    feature: str
+    source: str
+    user_text: str
+    bot_text: str
+    comment: str
+    status: str
+    bot_version: str
+    created_at: str
+
+
+class BugReportsRepository:
+    """Reports from the "🐞 Помилка" button: a wrong bot answer flagged by the user.
+
+    A report is written as soon as the button is pressed, so nothing is lost
+    if the user never writes a comment. The comment is optional; "Скасувати"
+    deletes the report.
+    """
+
+    FEATURES = frozenset({"translate", "say", "explain", "photo", "check"})
+    STATUSES = frozenset({"open", "done"})
+    TEXT_LIMIT = 4000
+    COMMENT_LIMIT = 1000
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def create(
+        self,
+        user_id: int,
+        feature: str,
+        bot_text: str,
+        *,
+        user_text: str = "",
+        source: str = "",
+        message_id: int | None = None,
+        bot_version: str = "",
+    ) -> int:
+        """Returns the report id. Pressing the button twice under the same
+        answer reuses the open report instead of creating a duplicate."""
+        if feature not in self.FEATURES:
+            feature = "translate"
+        if message_id is not None:
+            rows = self.db.query(
+                "SELECT id FROM bug_reports WHERE user_id = ? AND message_id = ? AND status = 'open'",
+                (user_id, message_id),
+            )
+            if rows:
+                return rows[0]["id"]
+        cursor = self.db.execute(
+            "INSERT INTO bug_reports(user_id, feature, source, user_text, bot_text, message_id, bot_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                user_id,
+                feature,
+                source[:40],
+                user_text.strip()[: self.TEXT_LIMIT],
+                bot_text.strip()[: self.TEXT_LIMIT],
+                message_id,
+                bot_version[:20],
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def _row(self, row: sqlite3.Row) -> BugReport:
+        return BugReport(**{name: row[name] for name in BugReport.__dataclass_fields__})
+
+    def get(self, report_id: int) -> BugReport | None:
+        rows = self.db.query("SELECT * FROM bug_reports WHERE id = ?", (report_id,))
+        return self._row(rows[0]) if rows else None
+
+    def owner(self, report_id: int) -> int | None:
+        rows = self.db.query("SELECT user_id FROM bug_reports WHERE id = ?", (report_id,))
+        return rows[0]["user_id"] if rows else None
+
+    def set_comment(self, report_id: int, user_id: int, comment: str) -> bool:
+        cursor = self.db.execute(
+            "UPDATE bug_reports SET comment = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+            (comment.strip()[: self.COMMENT_LIMIT], report_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+    def delete(self, report_id: int, user_id: int) -> bool:
+        cursor = self.db.execute("DELETE FROM bug_reports WHERE id = ? AND user_id = ?", (report_id, user_id))
+        return cursor.rowcount > 0
+
+    def set_status(self, report_id: int, status: str) -> bool:
+        """Admin action: mark a report reviewed ('done') or reopen it."""
+        if status not in self.STATUSES:
+            raise ValueError(f"status not allowed: {status}")
+        cursor = self.db.execute(
+            "UPDATE bug_reports SET status = ?, updated_at = datetime('now') WHERE id = ?",
+            (status, report_id),
+        )
+        return cursor.rowcount > 0
+
+    def list(self, status: str = "open", limit: int = 10) -> list[BugReport]:
+        rows = self.db.query(
+            "SELECT * FROM bug_reports WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (status, limit),
+        )
+        return [self._row(r) for r in rows]
+
+    def counts(self) -> dict[str, int]:
+        rows = self.db.query("SELECT status, COUNT(*) AS n FROM bug_reports GROUP BY status")
+        counts = {"open": 0, "done": 0}
+        counts.update({r["status"]: r["n"] for r in rows})
+        return counts
+
+    def export_rows(self) -> list[dict]:
+        """Everything for offline review. No Telegram IDs: they are not needed
+        to understand what went wrong."""
+        rows = self.db.query(
+            "SELECT id, created_at, status, feature, source, bot_version, user_text, bot_text, comment "
+            "FROM bug_reports ORDER BY id"
+        )
+        return [dict(r) for r in rows]
+
+
 class MetricsRepository:
     """Aggregated daily counters. Allowed metric names are an allow-list so
     nothing user-derived can ever become a metric key."""
@@ -460,6 +582,7 @@ class PrivacyRepository:
             ("saved_words", "user_id"),
             ("cards", "user_id"),
             ("practice_log", "user_id"),
+            ("bug_reports", "user_id"),
             ("user_settings", "user_id"),
         ):
             rows = self.db.query(f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = ?", (user_id,))
@@ -476,6 +599,7 @@ class PrivacyRepository:
                 ("DELETE FROM saved_words WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM cards WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM practice_log WHERE user_id = ?", (user_id,)),
+                ("DELETE FROM bug_reports WHERE user_id = ?", (user_id,)),
                 ("DELETE FROM user_settings WHERE user_id = ?", (user_id,)),
             ]
         )
@@ -495,6 +619,7 @@ class PrivacyRepository:
                 ("DELETE FROM saved_words WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM metrics_daily WHERE day < date('now', ?)", (cutoff,)),
                 ("DELETE FROM practice_log WHERE created_at < datetime('now', ?)", (cutoff,)),
+                ("DELETE FROM bug_reports WHERE created_at < datetime('now', ?)", (cutoff,)),
                 ("DELETE FROM cards WHERE updated_at < datetime('now', ?)", (cutoff,)),
                 (
                     "DELETE FROM cards WHERE kind = 'mistake' "
@@ -535,6 +660,7 @@ class AnalyticsRepository:
             "remember",
             "practice",
             "progress",
+            "bug_report",
         }
     )
     DETAILS = frozenset(
@@ -562,6 +688,10 @@ class AnalyticsRepository:
             "exists",
             "empty",
             "done",
+            "reported",
+            "commented",
+            "skipped",
+            "cancelled",
         }
     )
 

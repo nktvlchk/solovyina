@@ -31,6 +31,7 @@ EVENT_LABELS = {
     "direction": "зміна напряму",
     "delete_data": "видалення даних",
     "rate_limited": "ліміт запитів",
+    "bug_report": "🐞 помилка бота",
 }
 
 
@@ -42,7 +43,7 @@ def _pct(part: int, total: int) -> str:
     return f"{round(100 * part / total)}%" if total else "—"
 
 
-def format_report(report: dict, quality: list[dict]) -> str:
+def format_report(report: dict, quality: list[dict], bugs: dict[str, int] | None = None) -> str:
     days = report["days"]
     lines = [
         f"📊 <b>Продуктова статистика за {days} дн.</b>",
@@ -80,6 +81,8 @@ def format_report(report: dict, quality: list[dict]) -> str:
         for q in quality:
             key = f"{q['model']} / {q['prompt_version']} / {q['type']} / {q['verdict']}"
             lines.append(f"• {esc(key)}: {q['n']}")
+    if bugs is not None:
+        lines += ["", f"🐞 <b>Звіти про помилки бота:</b> відкритих {bugs.get('open', 0)} → /bugs"]
     lines += ["", "Вивантаження подій за 30 днів: /export_stats"]
     return "\n".join(lines)
 
@@ -94,7 +97,11 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         days = max(1, min(90, int(context.args[0])))
     await reply_html(
         update.effective_message,
-        format_report(svc.analytics.report(days), svc.corrections.quality_summary()),
+        format_report(
+            svc.analytics.report(days),
+            svc.corrections.quality_summary(),
+            svc.bug_reports.counts() if svc.bug_reports is not None else None,
+        ),
     )
 
 

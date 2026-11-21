@@ -13,7 +13,18 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers import admin, common, correction, feedback, modes, picture, practice, review, translation
+from bot.handlers import (
+    admin,
+    bugs,
+    common,
+    correction,
+    feedback,
+    modes,
+    picture,
+    practice,
+    review,
+    translation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +62,19 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("remember", review.cmd_remember, filters=PRIVATE))
     app.add_handler(CommandHandler("stats", admin.cmd_stats, filters=PRIVATE))
     app.add_handler(CommandHandler("export_stats", admin.cmd_export_stats, filters=PRIVATE))
+    app.add_handler(CommandHandler("bugs", bugs.cmd_bugs, filters=PRIVATE))
+    app.add_handler(CommandHandler("export_bugs", bugs.cmd_export_bugs, filters=PRIVATE))
+    # Tappable /done_12 and /reopen_12 from the /bugs list (admin only).
+    app.add_handler(
+        MessageHandler(PRIVATE & filters.Regex(r"^/(done|reopen)_\d+(@\w+)?$"), bugs.on_status_command)
+    )
 
     app.add_handler(CallbackQueryHandler(common.on_delete_callback, pattern=r"^del:"))
     app.add_handler(CallbackQueryHandler(translation.on_direction_callback, pattern=r"^dir[01]:"))
     app.add_handler(CallbackQueryHandler(translation.on_tts_callback, pattern=r"^tts:"))
     app.add_handler(CallbackQueryHandler(feedback.on_feedback_callback, pattern=r"^fb:"))
+    app.add_handler(CallbackQueryHandler(bugs.on_report_callback, pattern=r"^bug:"))
+    app.add_handler(CallbackQueryHandler(bugs.on_prompt_callback, pattern=r"^bug[sx]:"))
     app.add_handler(CallbackQueryHandler(review.on_review_callback, pattern=r"^rv:"))
     app.add_handler(CallbackQueryHandler(review.on_remember_callback, pattern=r"^mem:"))
     app.add_handler(CallbackQueryHandler(practice.on_practice_callback, pattern=r"^pr:"))

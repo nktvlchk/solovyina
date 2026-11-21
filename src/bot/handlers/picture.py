@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -121,4 +121,9 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     svc.metrics.incr("requests.photo", elapsed)
     track(update, context, "photo", ok=True, latency_ms=elapsed)
     await status.delete()
-    await reply_html(message, format_picture(reading))
+    from bot.handlers.bugs import report_button
+
+    # Only the answer is kept if the user presses 🐞: never the image or caption.
+    report = report_button(svc, update, "photo", "", "llm")
+    markup = InlineKeyboardMarkup([[report]]) if report is not None else None
+    await reply_html(message, format_picture(reading), reply_markup=markup)

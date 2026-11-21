@@ -143,12 +143,18 @@ async def run_check(update: Update, context: ContextTypes.DEFAULT_TYPE, text: st
     )
     await status.delete()
 
-    markup = None
+    from bot.handlers.bugs import report_button
+
+    rows = []
     if result.corrections and len(result.corrected_text) <= svc.settings.max_tts_length:
         key = svc.text_cache.put(result.corrected_text)
-        markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔊 Озвучити виправлене", callback_data=f"tts:{key}")]]
-        )
+        rows.append([InlineKeyboardButton("🔊 Озвучити виправлене", callback_data=f"tts:{key}")])
+    # 🐞 here covers what the per-fix buttons cannot: a missed error,
+    # a wrong "no errors" or a bad corrected version as a whole.
+    report = report_button(svc, update, "check", text, "llm")
+    if report is not None:
+        rows.append([report])
+    markup = InlineKeyboardMarkup(rows) if rows else None
     await reply_html(message, format_summary(result), reply_markup=markup)
     for i, correction in enumerate(result.corrections, 1):
         await reply_html(

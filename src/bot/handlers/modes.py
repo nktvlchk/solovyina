@@ -139,10 +139,14 @@ async def run_say(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
     track(update, context, "say", source=result.source.value, ok=True, latency_ms=elapsed, chars=len(text))
     source = esc(SOURCE_LABELS[result.source])
     reply = f"<b>{esc_line(text)}</b>\n\n🇺🇦 {esc(result.text)}\n\n<i>Джерело: {source}</i>"
+    from bot.handlers.bugs import report_button
     from bot.handlers.review import attach_actions
     from bot.services.review import ASK_SAY
 
-    markup = attach_actions(svc, tts_text=result.text, ask=ASK_SAY, front=text, back=result.text)
+    report = report_button(svc, update, "say", text, result.source.value)
+    markup = attach_actions(
+        svc, tts_text=result.text, ask=ASK_SAY, front=text, back=result.text, report=report
+    )
     await reply_html(update.effective_message, reply, reply_markup=markup)
 
 
@@ -199,6 +203,8 @@ async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: 
     if result.synonyms:
         lines.append(f"🔹 Синоніми: {esc(', '.join(result.synonyms))}")
     lines += ["", "<i>Пояснення: мовна модель (може помилятися)</i>"]
+    from bot.handlers.bugs import report_button
+
     definition = "; ".join(result.definitions)
     markup = attach_actions(
         svc,
@@ -207,6 +213,7 @@ async def run_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, text: 
         front=result.word,
         back=definition,
         note=result.example,
+        report=report_button(svc, update, "explain", text, "llm"),
     )
     await reply_html(update.effective_message, "\n".join(lines), reply_markup=markup)
 
@@ -234,10 +241,17 @@ async def show_mistakes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     """Handle a mode button, an open practice answer, or a pending mode."""
+    from bot.handlers.bugs import clear_pending, take_comment
+
     if text in BUTTONS:
         context.user_data.pop(MODE_KEY, None)
         context.user_data.pop("await_check", None)
+        clear_pending(context)
         await select_mode(update, context, BUTTONS[text])
+        return True
+    # Right after "🐞 Помилка" the next message is the comment (it was the
+    # last thing the user asked for, so it wins over a pending mode).
+    if await take_comment(update, context, text):
         return True
     session = context.user_data.get("practice")
     if isinstance(session, dict) and isinstance(session.get("current"), int):
